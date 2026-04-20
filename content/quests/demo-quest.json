@@ -1,0 +1,119 @@
+{
+  "questId": "demo_cell",
+  "version": "1.0.0",
+  "title": "Пробуждение в камере",
+  "startNodeId": "intro",
+  "variables": {
+    "resolve": 0
+  },
+  "flags": {
+    "hasKey": false
+  },
+  "nodes": [
+    {
+      "id": "intro",
+      "type": "text",
+      "text": [
+        "Вы приходите в себя в сырой камере.",
+        "Под дверью виден тонкий луч света."
+      ],
+      "choices": [
+        {
+          "id": "search_straw",
+          "text": "Осмотреть солому",
+          "effects": [
+            {
+              "type": "set_flag",
+              "target": "hasKey",
+              "value": true
+            }
+          ],
+          "nextNodeId": "corridor_decision"
+        },
+        {
+          "id": "call_guard",
+          "text": "Позвать стражника",
+          "effects": [
+            {
+              "type": "add",
+              "target": "resolve",
+              "value": 1
+            }
+          ],
+          "nextNodeId": "corridor_decision"
+        }
+      ]
+    },
+    {
+      "id": "corridor_decision",
+      "type": "decision",
+      "text": [
+        "Шаги в коридоре затихают, и у вас появляется шанс действовать."
+      ],
+      "choices": [
+        {
+          "id": "unlock_door",
+          "text": "Попробовать открыть дверь ключом",
+          "conditions": [
+            {
+              "target": "hasKey",
+              "operator": "==",
+              "value": true
+            }
+          ],
+          "nextNodeId": "outcome_branch"
+        },
+        {
+          "id": "force_door",
+          "text": "Навалиться на дверь плечом",
+          "conditions": [
+            {
+              "target": "resolve",
+              "operator": ">=",
+              "value": 1
+            }
+          ],
+          "nextNodeId": "outcome_branch"
+        },
+        {
+          "id": "wait",
+          "text": "Остаться и ждать",
+          "nextNodeId": "captured"
+        }
+      ]
+    },
+    {
+      "id": "outcome_branch",
+      "type": "branch",
+      "branches": [
+        {
+          "conditions": [
+            {
+              "target": "hasKey",
+              "operator": "==",
+              "value": true
+            }
+          ],
+          "nextNodeId": "escape"
+        }
+      ],
+      "defaultNextNodeId": "captured"
+    },
+    {
+      "id": "escape",
+      "type": "end",
+      "text": [
+        "Замок поддается, и вы бесшумно исчезаете в коридоре."
+      ],
+      "result": "victory"
+    },
+    {
+      "id": "captured",
+      "type": "end",
+      "text": [
+        "Шум привлекает стражу, и попытка побега заканчивается провалом."
+      ],
+      "result": "defeat"
+    }
+  ]
+}
