@@ -184,83 +184,15 @@
 
 ## 8. JSON-Формат Квеста
 
-Структура верхнего уровня:
+Фактический формат MVP зафиксирован отдельно в `docs/json-quest-format.md`.
 
-```json
-{
-  "questId": "sample_quest",
-  "version": "1.0.0",
-  "title": "Пример квеста",
-  "startNodeId": "intro",
-  "variables": {
-    "trust": 0,
-    "hasKey": false
-  },
-  "nodes": []
-}
-```
+Этот документ считается источником истины для:
 
-Рекомендуемая структура узла:
-
-```json
-{
-  "id": "intro",
-  "type": "text",
-  "text": [
-    "Вы просыпаетесь в запертой комнате.",
-    "За дверью кто-то говорит."
-  ],
-  "choices": [
-    {
-      "id": "listen",
-      "text": "Прислушаться",
-      "consequences": [
-        { "type": "add", "target": "trust", "value": 1 }
-      ],
-      "nextNodeId": "door_voice"
-    },
-    {
-      "id": "break_door",
-      "text": "Выломать дверь",
-      "conditions": [
-        { "var": "trust", "op": ">=", "value": 1 }
-      ],
-      "nextNodeId": "hallway"
-    }
-  ]
-}
-```
-
-Рекомендуемый узел ветвления:
-
-```json
-{
-  "id": "judge_outcome",
-  "type": "branch",
-  "branches": [
-    {
-      "condition": {
-        "all": [
-          { "var": "hasKey", "op": "==", "value": true }
-        ]
-      },
-      "nextNodeId": "escape"
-    }
-  ],
-  "defaultNextNodeId": "captured"
-}
-```
-
-Рекомендуемый конечный узел:
-
-```json
-{
-  "id": "escape",
-  "type": "end",
-  "text": ["Вы выбрались."],
-  "result": "victory"
-}
-```
+- верхнеуровневой структуры квеста
+- поддерживаемых типов узлов
+- формата `conditions` и `effects`
+- обязательных и опциональных полей
+- ограничений валидации для CLI и runtime
 
 ## 9. Правила Валидации Для MVP
 

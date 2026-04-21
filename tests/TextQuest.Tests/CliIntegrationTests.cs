@@ -60,6 +60,50 @@ public sealed class CliIntegrationTests : IDisposable
         Assert.Contains("\"eventName\":\"GameStarted\"", standardError, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task Cli_ShouldUseQuickSlotWhenSaveAndLoadIdsAreOmitted()
+    {
+        var questPath = Path.Combine(RepositoryRoot, "content", "quests", "demo-quest.json");
+        var process = StartCliProcess(questPath, savesDirectory);
+
+        await process.StandardInput.WriteLineAsync("save");
+        await process.StandardInput.WriteLineAsync("load");
+        await process.StandardInput.WriteLineAsync("exit");
+        process.StandardInput.Close();
+
+        var standardOutput = await process.StandardOutput.ReadToEndAsync();
+        var standardError = await process.StandardError.ReadToEndAsync();
+        await process.WaitForExitAsync();
+
+        Assert.Equal(0, process.ExitCode);
+        Assert.Contains("Сохранение 'quick' записано.", standardOutput, StringComparison.Ordinal);
+        Assert.Contains("Сохранение 'quick' загружено.", standardOutput, StringComparison.Ordinal);
+        Assert.Contains("Выход из игры.", standardOutput, StringComparison.Ordinal);
+        Assert.Contains("\"eventName\":\"SaveWritten\"", standardError, StringComparison.Ordinal);
+        Assert.Contains("\"eventName\":\"SaveLoaded\"", standardError, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Cli_ShouldReportMissingSaveAndContinueRunning()
+    {
+        var questPath = Path.Combine(RepositoryRoot, "content", "quests", "demo-quest.json");
+        var process = StartCliProcess(questPath, savesDirectory);
+
+        await process.StandardInput.WriteLineAsync("load missing-slot");
+        await process.StandardInput.WriteLineAsync("exit");
+        process.StandardInput.Close();
+
+        var standardOutput = await process.StandardOutput.ReadToEndAsync();
+        var standardError = await process.StandardError.ReadToEndAsync();
+        await process.WaitForExitAsync();
+
+        Assert.Equal(0, process.ExitCode);
+        Assert.Contains("Сохранение 'missing-slot' не найдено.", standardOutput, StringComparison.Ordinal);
+        Assert.Contains("Выход из игры.", standardOutput, StringComparison.Ordinal);
+        Assert.Contains("\"eventName\":\"QuestLoaded\"", standardError, StringComparison.Ordinal);
+        Assert.Contains("\"eventName\":\"GameStarted\"", standardError, StringComparison.Ordinal);
+    }
+
     private static Process StartCliProcess(string questPath, string savesDirectory)
     {
         Directory.CreateDirectory(savesDirectory);
