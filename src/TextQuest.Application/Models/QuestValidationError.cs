@@ -6,4 +6,8 @@ namespace TextQuest.Application.Models;
 public sealed record QuestValidationError(
     string Code,
     string Message,
-    string? Path = null);
+    string? Path = null,
+    string? NodeId = null,
+    string? ChoiceId = null,
+    string? Expected = null,
+    string? Actual = null);
