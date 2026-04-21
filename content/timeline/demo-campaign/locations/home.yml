@@ -1,0 +1,22 @@
+id: home
+title: Дом
+
+entries:
+  - id: default
+    text:
+      - "Дом. День {{day}}."
+      - "Можно выйти в город или заняться своими делами."
+    actions:
+      - id: go_abandoned_house
+        text: "Пойти в заброшку"
+        goto: abandoned_house
+
+      - id: drink_alice
+        text: "Выпить (Алиса)"
+        when: char_alice_selected
+        do: char_alice_drank_today = true
+
+      - id: drink_bob
+        text: "Выпить (Боб)"
+        when: char_bob_selected
+        do: char_bob_drank_today = true

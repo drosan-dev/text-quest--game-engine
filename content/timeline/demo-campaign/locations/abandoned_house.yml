@@ -1,0 +1,26 @@
+id: abandoned_house
+title: Заброшка
+
+entries:
+  - id: door_closed
+    when: '!world_door_open'
+    text:
+      - "Заброшенный дом. Дверь закрыта."
+      - "Кажется, её можно открыть."
+    actions:
+      - id: open_door
+        text: "Открыть дверь"
+        do: world_door_open = true
+
+      - id: back_home
+        text: "Вернуться домой"
+        goto: home
+
+  - id: door_open
+    text:
+      - "Заброшенный дом. Дверь уже открыта."
+      - "Внутри темно и тихо."
+    actions:
+      - id: back_home
+        text: "Вернуться домой"
+        goto: home
