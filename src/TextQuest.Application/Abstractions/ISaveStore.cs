@@ -10,7 +10,7 @@ public interface ISaveStore
     /// <summary>
     /// Сохраняет состояние игры в постоянное хранилище.
     /// </summary>
-    Task SaveAsync(GameState gameState, CancellationToken cancellationToken = default);
+    Task SaveAsync(string saveId, GameState gameState, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Загружает ранее сохранённое состояние игры по идентификатору.
