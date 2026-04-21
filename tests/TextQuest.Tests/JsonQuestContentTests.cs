@@ -24,7 +24,7 @@ public sealed class JsonQuestContentTests
         Assert.Equal("demo_cell", definition.QuestId);
         Assert.Equal("intro", definition.StartNodeId);
         Assert.Equal(5, definition.Nodes.Count);
-        Assert.True(definition.TextPools.ContainsKey("cell_flavor"));
+        Assert.True(definition.TextPools.ContainsKey("intro.cell_flavor"));
         Assert.Contains("escape", definition.Nodes.Keys);
     }
 

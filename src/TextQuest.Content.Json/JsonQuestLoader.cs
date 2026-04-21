@@ -90,6 +90,7 @@ public sealed class JsonQuestLoader : IQuestLoader
         }
 
         var mappingErrors = new List<QuestValidationError>();
+        var textPools = ParseTextPools(document.TextPools, mappingErrors);
         var nodes = new Dictionary<string, NodeDefinition>(StringComparer.Ordinal);
         var nodeDtos = document.Nodes ?? [];
 
@@ -108,7 +109,14 @@ public sealed class JsonQuestLoader : IQuestLoader
                 continue;
             }
 
-            if (!TryParseNode(nodeDto, nodePath, out var node, out var nodeErrors))
+            var localPoolIdMap = BuildLocalTextPoolIdMap(
+                nodeId,
+                nodeDto.TextPools,
+                nodePath + ".textPools",
+                textPools,
+                mappingErrors);
+
+            if (!TryParseNode(nodeDto, nodePath, localPoolIdMap, out var node, out var nodeErrors))
             {
                 mappingErrors.AddRange(nodeErrors);
                 continue;
@@ -122,14 +130,6 @@ public sealed class JsonQuestLoader : IQuestLoader
                     nodePath + ".id"));
             }
         }
-
-        if (mappingErrors.Count > 0)
-        {
-            _logger.LogWarning(QuestMappingFailedEvent, "Quest source {QuestSource} failed mapping with {ErrorCount} errors", source, mappingErrors.Count);
-            throw new QuestValidationException(mappingErrors);
-        }
-
-        var textPools = ParseTextPools(document.TextPools, mappingErrors);
 
         if (mappingErrors.Count > 0)
         {
@@ -162,13 +162,15 @@ public sealed class JsonQuestLoader : IQuestLoader
     private static bool TryParseNode(
         NodeDto nodeDto,
         string nodePath,
+        IReadOnlyDictionary<string, string> localPoolIdMap,
         out NodeDefinition? node,
         out IReadOnlyList<QuestValidationError> errors)
     {
         var localErrors = new List<QuestValidationError>();
         var nodeId = nodeDto.Id?.Trim() ?? string.Empty;
         var nodeTypeValue = nodeDto.Type?.Trim();
-        var text = nodeDto.Text?.Where(line => line is not null).Select(line => line!.Trim()).ToArray() ?? [];
+        var rawText = nodeDto.Text?.Where(line => line is not null).Select(line => line!.Trim()).ToArray() ?? [];
+        var text = TextPoolReferenceRewriter.Rewrite(rawText, localPoolIdMap).ToArray();
 
         if (!Enum.TryParse<NodeType>(nodeTypeValue, ignoreCase: true, out var nodeType))
         {
@@ -184,8 +186,8 @@ public sealed class JsonQuestLoader : IQuestLoader
 
         node = nodeType switch
         {
-            NodeType.Text => new TextNodeDefinition(nodeId, text, ParseChoices(nodeDto.Choices, nodePath + ".choices", localErrors)),
-            NodeType.Decision => new DecisionNodeDefinition(nodeId, text, ParseChoices(nodeDto.Choices, nodePath + ".choices", localErrors)),
+            NodeType.Text => new TextNodeDefinition(nodeId, text, ParseChoices(nodeDto.Choices, nodePath + ".choices", localErrors, localPoolIdMap)),
+            NodeType.Decision => new DecisionNodeDefinition(nodeId, text, ParseChoices(nodeDto.Choices, nodePath + ".choices", localErrors, localPoolIdMap)),
             NodeType.Branch => new BranchNodeDefinition(
                 nodeId,
                 text,
@@ -202,7 +204,8 @@ public sealed class JsonQuestLoader : IQuestLoader
     private static IReadOnlyList<ChoiceDefinition> ParseChoices(
         List<ChoiceDto>? choiceDtos,
         string path,
-        List<QuestValidationError> errors)
+        List<QuestValidationError> errors,
+        IReadOnlyDictionary<string, string> localPoolIdMap)
     {
         if (choiceDtos is null)
         {
@@ -216,7 +219,7 @@ public sealed class JsonQuestLoader : IQuestLoader
             var dto = choiceDtos[index];
             choices.Add(new ChoiceDefinition(
                 dto.Id?.Trim() ?? string.Empty,
-                dto.Text?.Trim() ?? string.Empty,
+                TextPoolReferenceRewriter.Rewrite(dto.Text?.Trim() ?? string.Empty, localPoolIdMap),
                 dto.NextNodeId?.Trim() ?? string.Empty,
                 ParseConditions(dto.Conditions, $"{path}[{index}].conditions", errors),
                 ParseEffects(dto.Effects, $"{path}[{index}].effects", errors)));
@@ -332,7 +335,75 @@ public sealed class JsonQuestLoader : IQuestLoader
         return string.IsNullOrWhiteSpace(path) ? "$" : path;
     }
 
-    private static IReadOnlyDictionary<string, TextPoolDefinition> ParseTextPools(
+    private static IReadOnlyDictionary<string, string> BuildLocalTextPoolIdMap(
+        string nodeId,
+        Dictionary<string, List<string?>?>? localPools,
+        string path,
+        Dictionary<string, TextPoolDefinition> globalPools,
+        List<QuestValidationError> errors)
+    {
+        if (localPools is null || localPools.Count == 0)
+        {
+            return new Dictionary<string, string>(StringComparer.Ordinal);
+        }
+
+        var idMap = new Dictionary<string, string>(StringComparer.Ordinal);
+
+        foreach (var (poolIdRaw, itemsRaw) in localPools)
+        {
+            var poolId = (poolIdRaw ?? string.Empty).Trim();
+            var poolPath = $"{path}['{poolIdRaw?.Replace("'", "\\'", StringComparison.Ordinal) ?? string.Empty}']";
+
+            if (string.IsNullOrWhiteSpace(poolId))
+            {
+                errors.Add(new QuestValidationError("text_pool.id.required", "Text pool id must not be empty.", poolPath, NodeId: nodeId));
+                continue;
+            }
+
+            var globalId = $"{nodeId}.{poolId}";
+            if (!idMap.TryAdd(poolId, globalId))
+            {
+                errors.Add(new QuestValidationError("text_pool.id.duplicate", $"Text pool id '{poolId}' must be unique within node.", poolPath, NodeId: nodeId));
+                continue;
+            }
+
+            if (itemsRaw is null)
+            {
+                errors.Add(new QuestValidationError("text_pool.items.required", $"Text pool '{poolId}' must be an array of strings.", poolPath, NodeId: nodeId));
+                continue;
+            }
+
+            var items = new List<string>(itemsRaw.Count);
+            for (var index = 0; index < itemsRaw.Count; index++)
+            {
+                var value = itemsRaw[index]?.Trim() ?? string.Empty;
+                if (string.IsNullOrWhiteSpace(value))
+                {
+                    errors.Add(new QuestValidationError("text_pool.item.required", $"Text pool '{poolId}' must contain only non-empty strings.", $"{poolPath}[{index}]", NodeId: nodeId));
+                    continue;
+                }
+
+                items.Add(value);
+            }
+
+            if (items.Count == 0)
+            {
+                continue;
+            }
+
+            if (globalPools.ContainsKey(globalId))
+            {
+                errors.Add(new QuestValidationError("text_pool.id.duplicate", $"Text pool id '{globalId}' must be unique.", poolPath, NodeId: nodeId));
+                continue;
+            }
+
+            globalPools[globalId] = new TextPoolDefinition(globalId, items);
+        }
+
+        return idMap;
+    }
+
+    private static Dictionary<string, TextPoolDefinition> ParseTextPools(
         Dictionary<string, List<string?>?>? pools,
         List<QuestValidationError> errors)
     {
@@ -425,6 +496,8 @@ public sealed class JsonQuestLoader : IQuestLoader
         public string? Type { get; init; }
 
         public List<string?>? Text { get; init; }
+
+        public Dictionary<string, List<string?>?>? TextPools { get; init; }
 
         public List<ChoiceDto>? Choices { get; init; }
 

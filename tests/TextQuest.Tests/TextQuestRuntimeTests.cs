@@ -42,11 +42,11 @@ public sealed class TextQuestRuntimeTests
         var session = await runtime.StartNewGameAsync(definition);
 
         // Assert
-        var selectionKey = "node:intro:text:1|cell_flavor|0";
+        var selectionKey = "node:intro:text:1|intro.cell_flavor|0";
         Assert.True(session.GameState.RandomSelections.ContainsKey(selectionKey));
         var selectedIndex = session.GameState.RandomSelections[selectionKey];
-        Assert.InRange(selectedIndex, 0, definition.TextPools["cell_flavor"].Items.Count - 1);
-        Assert.Equal(definition.TextPools["cell_flavor"].Items[selectedIndex], session.PresentableState.TextBlocks[1]);
+        Assert.InRange(selectedIndex, 0, definition.TextPools["intro.cell_flavor"].Items.Count - 1);
+        Assert.Equal(definition.TextPools["intro.cell_flavor"].Items[selectedIndex], session.PresentableState.TextBlocks[1]);
     }
 
     /// <summary>
