@@ -1,1 +1,189 @@
-Console.WriteLine("TextQuest CLI scaffold is ready. Runtime flow will be added in a later MVP stage.");
+using TextQuest.Application;
+using TextQuest.Application.Abstractions;
+using TextQuest.Application.Models;
+using TextQuest.Content.Json;
+using TextQuest.Frontends.Contracts;
+using TextQuest.Infrastructure;
+using System.Text.Json;
+
+return await RunAsync(args);
+
+static async Task<int> RunAsync(string[] args)
+{
+    try
+    {
+        var options = ParseOptions(args);
+        IQuestLoader loader = new JsonQuestLoader();
+        ITextQuestRuntime runtime = new TextQuestRuntime();
+        ISaveStore saveStore = new FileSystemSaveStore(options.SavesDirectory);
+
+        var definition = await loader.LoadAsync(options.QuestPath);
+        var session = await runtime.StartNewGameAsync(definition);
+
+        while (true)
+        {
+            RenderState(session.PresentableState);
+
+            if (session.PresentableState.IsCompleted)
+            {
+                Console.WriteLine($"\nКвест завершен. Результат: {session.PresentableState.Result ?? "unknown"}");
+                return 0;
+            }
+
+            Console.Write("\n> ");
+            var input = Console.ReadLine();
+            if (input is null)
+            {
+                return 0;
+            }
+
+            var command = input.Trim();
+            if (command.Length == 0)
+            {
+                Console.WriteLine("Введите номер выбора или команду: save [id], load [id], exit.");
+                continue;
+            }
+
+            if (string.Equals(command, "exit", StringComparison.OrdinalIgnoreCase))
+            {
+                Console.WriteLine("Выход из игры.");
+                return 0;
+            }
+
+            if (TryParseSaveCommand(command, out var saveId))
+            {
+                await saveStore.SaveAsync(saveId, session.GameState);
+                Console.WriteLine($"Сохранение '{saveId}' записано.");
+                continue;
+            }
+
+            if (TryParseLoadCommand(command, out saveId))
+            {
+                var savedState = await saveStore.LoadAsync(saveId);
+                if (savedState is null)
+                {
+                    Console.WriteLine($"Сохранение '{saveId}' не найдено.");
+                    continue;
+                }
+
+                session = await runtime.RestoreAsync(definition, savedState);
+                Console.WriteLine($"Сохранение '{saveId}' загружено.");
+                continue;
+            }
+
+            if (!int.TryParse(command, out var choiceNumber))
+            {
+                Console.WriteLine("Неверный ввод. Используйте номер выбора или команды save/load/exit.");
+                continue;
+            }
+
+            if (choiceNumber < 1 || choiceNumber > session.PresentableState.Choices.Count)
+            {
+                Console.WriteLine("Выбор вне диапазона доступных вариантов.");
+                continue;
+            }
+
+            var selectedChoice = session.PresentableState.Choices[choiceNumber - 1];
+            session = await runtime.ApplyChoiceAsync(definition, session.GameState, selectedChoice.Id);
+        }
+    }
+    catch (Exception exception) when (exception is QuestValidationException or InvalidChoiceException or IOException or InvalidOperationException or ArgumentException or InvalidDataException or JsonException)
+    {
+        Console.Error.WriteLine(exception.Message);
+        return 1;
+    }
+}
+
+static CliOptions ParseOptions(string[] args)
+{
+    string? questPath = null;
+    string? savesDirectory = null;
+
+    for (var index = 0; index < args.Length; index++)
+    {
+        switch (args[index])
+        {
+            case "--quest":
+                questPath = ReadOptionValue(args, ref index, "--quest");
+                break;
+
+            case "--saves-dir":
+                savesDirectory = ReadOptionValue(args, ref index, "--saves-dir");
+                break;
+
+            default:
+                throw new ArgumentException($"Unknown argument '{args[index]}'. Supported arguments: --quest <path>, --saves-dir <path>.");
+        }
+    }
+
+    return new CliOptions(
+        questPath is null ? GetDefaultQuestPath() : Path.GetFullPath(questPath),
+        savesDirectory is null ? null : Path.GetFullPath(savesDirectory));
+}
+
+static string ReadOptionValue(string[] args, ref int index, string optionName)
+{
+    if (index + 1 >= args.Length || string.IsNullOrWhiteSpace(args[index + 1]))
+    {
+        throw new ArgumentException($"Argument '{optionName}' requires a value.");
+    }
+
+    index++;
+    return args[index];
+}
+
+static string GetDefaultQuestPath()
+{
+    return Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "content", "quests", "demo-quest.json"));
+}
+
+static bool TryParseSaveCommand(string input, out string saveId)
+{
+    return TryParseNamedCommand(input, "save", out saveId);
+}
+
+static bool TryParseLoadCommand(string input, out string saveId)
+{
+    return TryParseNamedCommand(input, "load", out saveId);
+}
+
+static bool TryParseNamedCommand(string input, string commandName, out string argument)
+{
+    var parts = input.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+    if (parts.Length == 0 || !string.Equals(parts[0], commandName, StringComparison.OrdinalIgnoreCase))
+    {
+        argument = string.Empty;
+        return false;
+    }
+
+    argument = parts.Length > 1 ? parts[1] : "quick";
+    return true;
+}
+
+static void RenderState(PresentableState state)
+{
+    Console.WriteLine();
+    Console.WriteLine(state.Title);
+    Console.WriteLine(new string('=', state.Title.Length));
+
+    foreach (var textBlock in state.TextBlocks)
+    {
+        Console.WriteLine(textBlock);
+    }
+
+    if (state.IsCompleted)
+    {
+        return;
+    }
+
+    Console.WriteLine();
+    for (var index = 0; index < state.Choices.Count; index++)
+    {
+        var choice = state.Choices[index];
+        Console.WriteLine($"{index + 1}. {choice.Text}");
+    }
+
+    Console.WriteLine("Команды: save [id], load [id], exit");
+}
+
+internal sealed record CliOptions(string QuestPath, string? SavesDirectory);

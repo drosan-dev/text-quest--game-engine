@@ -23,6 +23,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\TextQuest.Domain\TextQuest.Domain.csproj" />
     <ProjectReference Include="..\..\src\TextQuest.Application\TextQuest.Application.csproj" />
+    <ProjectReference Include="..\..\src\TextQuest.Cli\TextQuest.Cli.csproj" />
     <ProjectReference Include="..\..\src\TextQuest.Content.Json\TextQuest.Content.Json.csproj" />
     <ProjectReference Include="..\..\src\TextQuest.Infrastructure\TextQuest.Infrastructure.csproj" />
     <ProjectReference Include="..\..\src\TextQuest.Frontends.Contracts\TextQuest.Frontends.Contracts.csproj" />

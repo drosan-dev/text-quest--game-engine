@@ -2,7 +2,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\TextQuest.Application\TextQuest.Application.csproj" />
-    <ProjectReference Include="..\TextQuest.Frontends.Contracts\TextQuest.Frontends.Contracts.csproj" />
+    <ProjectReference Include="..\TextQuest.Content.Json\TextQuest.Content.Json.csproj" />
+    <ProjectReference Include="..\TextQuest.Infrastructure\TextQuest.Infrastructure.csproj" />
   </ItemGroup>
 
   <PropertyGroup>
