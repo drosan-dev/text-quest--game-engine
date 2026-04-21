@@ -17,6 +17,8 @@ public sealed class TextRendererTests
             "node1",
             new Dictionary<string, int> { ["resolve"] = 5 },
             new Dictionary<string, bool>(),
+            0,
+            new Dictionary<string, int>(),
             ["node1"],
             [],
             GameStatus.InProgress);
@@ -36,6 +38,8 @@ public sealed class TextRendererTests
             "node1",
             new Dictionary<string, int>(),
             new Dictionary<string, bool> { ["hasKey"] = true },
+            0,
+            new Dictionary<string, int>(),
             ["node1"],
             [],
             GameStatus.InProgress);
@@ -55,6 +59,8 @@ public sealed class TextRendererTests
             "node1",
             new Dictionary<string, int>(),
             new Dictionary<string, bool> { ["hasKey"] = false },
+            0,
+            new Dictionary<string, int>(),
             ["node1"],
             [],
             GameStatus.InProgress);
@@ -74,6 +80,8 @@ public sealed class TextRendererTests
             "node1",
             new Dictionary<string, int>(),
             new Dictionary<string, bool> { ["hasKey"] = false },
+            0,
+            new Dictionary<string, int>(),
             ["node1"],
             [],
             GameStatus.InProgress);
@@ -93,6 +101,8 @@ public sealed class TextRendererTests
             "node1",
             new Dictionary<string, int> { ["resolve"] = 10 },
             new Dictionary<string, bool> { ["hasKey"] = true, ["hasSword"] = false },
+            0,
+            new Dictionary<string, int>(),
             ["node1"],
             [],
             GameStatus.InProgress);
@@ -112,6 +122,8 @@ public sealed class TextRendererTests
             "node1",
             new Dictionary<string, int>(),
             new Dictionary<string, bool>(),
+            0,
+            new Dictionary<string, int>(),
             ["node1"],
             [],
             GameStatus.InProgress);
@@ -130,6 +142,8 @@ public sealed class TextRendererTests
             "node1",
             new Dictionary<string, int>(),
             new Dictionary<string, bool>(),
+            0,
+            new Dictionary<string, int>(),
             ["node1"],
             [],
             GameStatus.InProgress);
@@ -148,6 +162,8 @@ public sealed class TextRendererTests
             "node1",
             new Dictionary<string, int> { ["resolve"] = 5 },
             new Dictionary<string, bool> { ["hasKey"] = true },
+            0,
+            new Dictionary<string, int>(),
             ["node1"],
             [],
             GameStatus.InProgress);
@@ -167,6 +183,8 @@ public sealed class TextRendererTests
             "node1",
             new Dictionary<string, int> { ["resolve"] = 10 },
             new Dictionary<string, bool> { ["hasKey"] = true, ["hasSword"] = false },
+            0,
+            new Dictionary<string, int>(),
             ["node1"],
             [],
             GameStatus.InProgress);
@@ -186,6 +204,8 @@ public sealed class TextRendererTests
             "node1",
             new Dictionary<string, int>(),
             new Dictionary<string, bool> { ["flag"] = true },
+            0,
+            new Dictionary<string, int>(),
             ["node1"],
             [],
             GameStatus.InProgress);
@@ -205,6 +225,8 @@ public sealed class TextRendererTests
             "node1",
             new Dictionary<string, int>(),
             new Dictionary<string, bool> { ["a"] = true },
+            0,
+            new Dictionary<string, int>(),
             ["node1"],
             [],
             GameStatus.InProgress);

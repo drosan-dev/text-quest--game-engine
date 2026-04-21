@@ -10,4 +10,5 @@ public sealed record QuestDefinition(
     string StartNodeId,
     IReadOnlyDictionary<string, int> InitialVariables,
     IReadOnlyDictionary<string, bool> InitialFlags,
+    IReadOnlyDictionary<string, TextPoolDefinition> TextPools,
     IReadOnlyDictionary<string, NodeDefinition> Nodes);

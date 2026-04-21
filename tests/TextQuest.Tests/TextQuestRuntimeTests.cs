@@ -28,6 +28,46 @@ public sealed class TextQuestRuntimeTests
         Assert.False(session.PresentableState.IsCompleted);
     }
 
+    /// <summary>
+    /// Проверяет, что при отображении узла ссылка на {{pool:...}} раскрывается и результат стабилизируется в GameState.
+    /// </summary>
+    [Fact]
+    public async Task StartNewGameAsync_ShouldStabilizeTextPoolSelectionInGameState()
+    {
+        // Arrange
+        var definition = await LoadDemoQuestAsync();
+        var runtime = new TextQuestRuntime(new TextRenderer(), new FixedSeedRandomProvider(seed: 42));
+
+        // Act
+        var session = await runtime.StartNewGameAsync(definition);
+
+        // Assert
+        var selectionKey = "node:intro:text:1|cell_flavor|0";
+        Assert.True(session.GameState.RandomSelections.ContainsKey(selectionKey));
+        var selectedIndex = session.GameState.RandomSelections[selectionKey];
+        Assert.InRange(selectedIndex, 0, definition.TextPools["cell_flavor"].Items.Count - 1);
+        Assert.Equal(definition.TextPools["cell_flavor"].Items[selectedIndex], session.PresentableState.TextBlocks[1]);
+    }
+
+    /// <summary>
+    /// Проверяет, что после RestoreAsync уже выбранный вариант из пула не меняется.
+    /// </summary>
+    [Fact]
+    public async Task RestoreAsync_ShouldKeepSelectedTextPoolVariant()
+    {
+        // Arrange
+        var definition = await LoadDemoQuestAsync();
+        var runtime = new TextQuestRuntime(new TextRenderer(), new FixedSeedRandomProvider(seed: 42));
+        var startedSession = await runtime.StartNewGameAsync(definition);
+        var expectedLine = startedSession.PresentableState.TextBlocks[1];
+
+        // Act
+        var restoredSession = await runtime.RestoreAsync(definition, startedSession.GameState);
+
+        // Assert
+        Assert.Equal(expectedLine, restoredSession.PresentableState.TextBlocks[1]);
+    }
+
     [Fact]
     public async Task ApplyChoiceAsync_ShouldCompleteDemoQuestWithVictoryBranch()
     {
@@ -174,6 +214,8 @@ public sealed class TextQuestRuntimeTests
             {
                 ["hasKey"] = true,
             },
+            0,
+            new Dictionary<string, int>(StringComparer.Ordinal),
             new[] { "intro", "corridor_decision" },
             new[] { new DecisionRecord("intro", "search_straw") },
             GameStatus.InProgress);

@@ -158,6 +158,8 @@ public sealed class FileSystemSaveStore : ISaveStore
         string CurrentNodeId,
         Dictionary<string, int> Variables,
         Dictionary<string, bool> Flags,
+        int RandomSeed,
+        Dictionary<string, int>? RandomSelections,
         string[] VisitedNodeIds,
         SaveDecisionRecord[] DecisionHistory,
         string Status)
@@ -170,6 +172,8 @@ public sealed class FileSystemSaveStore : ISaveStore
                 gameState.CurrentNodeId,
                 gameState.Variables.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal),
                 gameState.Flags.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal),
+                gameState.RandomSeed,
+                gameState.RandomSelections.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal),
                 gameState.VisitedNodeIds.ToArray(),
                 gameState.DecisionHistory.Select(SaveDecisionRecord.FromDomain).ToArray(),
                 gameState.Status.ToString());
@@ -188,6 +192,8 @@ public sealed class FileSystemSaveStore : ISaveStore
                 RequireValue(CurrentNodeId, "currentNodeId"),
                 new Dictionary<string, int>(Variables ?? new Dictionary<string, int>(), StringComparer.Ordinal),
                 new Dictionary<string, bool>(Flags ?? new Dictionary<string, bool>(), StringComparer.Ordinal),
+                RandomSeed,
+                new Dictionary<string, int>(RandomSelections ?? new Dictionary<string, int>(), StringComparer.Ordinal),
                 VisitedNodeIds ?? [],
                 (DecisionHistory ?? []).Select(record => record.ToDomain()).ToArray(),
                 status);

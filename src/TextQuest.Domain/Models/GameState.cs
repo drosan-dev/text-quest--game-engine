@@ -11,6 +11,8 @@ public sealed record GameState(
     string CurrentNodeId,
     IReadOnlyDictionary<string, int> Variables,
     IReadOnlyDictionary<string, bool> Flags,
+    int RandomSeed,
+    IReadOnlyDictionary<string, int> RandomSelections,
     IReadOnlyList<string> VisitedNodeIds,
     IReadOnlyList<DecisionRecord> DecisionHistory,
     GameStatus Status);

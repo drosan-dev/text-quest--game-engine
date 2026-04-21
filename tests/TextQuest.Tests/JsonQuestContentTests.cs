@@ -24,6 +24,7 @@ public sealed class JsonQuestContentTests
         Assert.Equal("demo_cell", definition.QuestId);
         Assert.Equal("intro", definition.StartNodeId);
         Assert.Equal(5, definition.Nodes.Count);
+        Assert.True(definition.TextPools.ContainsKey("cell_flavor"));
         Assert.Contains("escape", definition.Nodes.Keys);
     }
 
@@ -70,6 +71,13 @@ public sealed class JsonQuestContentTests
         Assert.Equal(runtimeDefinition.StartNodeId, authoringDefinition.StartNodeId);
         Assert.Equal(runtimeDefinition.InitialVariables, authoringDefinition.InitialVariables);
         Assert.Equal(runtimeDefinition.InitialFlags, authoringDefinition.InitialFlags);
+        Assert.Equal(
+            runtimeDefinition.TextPools.Keys.OrderBy(key => key, StringComparer.Ordinal),
+            authoringDefinition.TextPools.Keys.OrderBy(key => key, StringComparer.Ordinal));
+        foreach (var poolId in runtimeDefinition.TextPools.Keys)
+        {
+            Assert.Equal(runtimeDefinition.TextPools[poolId].Items, authoringDefinition.TextPools[poolId].Items);
+        }
         Assert.Equal(runtimeDefinition.Nodes.Keys.OrderBy(key => key, StringComparer.Ordinal), authoringDefinition.Nodes.Keys.OrderBy(key => key, StringComparer.Ordinal));
 
         var runtimeIntroNode = Assert.IsType<TextQuest.Domain.Models.TextNodeDefinition>(runtimeDefinition.Nodes["intro"]);

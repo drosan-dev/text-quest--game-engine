@@ -126,6 +126,7 @@ public sealed class AuthoringQuestLoader : IQuestLoader
     {
         var variables = document.Vars ?? document.Variables ?? new Dictionary<string, int>(StringComparer.Ordinal);
         var flags = document.Flags ?? new Dictionary<string, bool>(StringComparer.Ordinal);
+        var textPools = CompileTextPools(document.TextPools, errors);
         var scenes = document.Scenes ?? new Dictionary<string, AuthoringSceneDto>(StringComparer.Ordinal);
         var nodes = new Dictionary<string, NodeDefinition>(StringComparer.Ordinal);
 
@@ -157,7 +158,58 @@ public sealed class AuthoringQuestLoader : IQuestLoader
             (document.Start ?? document.StartNodeId)?.Trim() ?? string.Empty,
             variables,
             flags,
+            textPools,
             nodes);
+    }
+
+    private static IReadOnlyDictionary<string, TextPoolDefinition> CompileTextPools(
+        Dictionary<string, List<string?>?>? pools,
+        List<QuestValidationError> errors)
+    {
+        if (pools is null || pools.Count == 0)
+        {
+            return new Dictionary<string, TextPoolDefinition>(StringComparer.Ordinal);
+        }
+
+        var result = new Dictionary<string, TextPoolDefinition>(StringComparer.Ordinal);
+
+        foreach (var (poolIdRaw, itemsRaw) in pools)
+        {
+            var poolId = (poolIdRaw ?? string.Empty).Trim();
+            var poolPath = $"$.textPools.{poolIdRaw}";
+
+            if (string.IsNullOrWhiteSpace(poolId))
+            {
+                errors.Add(new QuestValidationError("text_pool.id.required", "Text pool id must not be empty.", poolPath));
+                continue;
+            }
+
+            if (itemsRaw is null)
+            {
+                errors.Add(new QuestValidationError("text_pool.items.required", $"Text pool '{poolId}' must be an array of strings.", poolPath));
+                continue;
+            }
+
+            var items = new List<string>(itemsRaw.Count);
+            for (var index = 0; index < itemsRaw.Count; index++)
+            {
+                var value = itemsRaw[index]?.Trim() ?? string.Empty;
+                if (string.IsNullOrWhiteSpace(value))
+                {
+                    errors.Add(new QuestValidationError("text_pool.item.required", $"Text pool '{poolId}' must contain only non-empty strings.", $"{poolPath}[{index}]"));
+                    continue;
+                }
+
+                items.Add(value);
+            }
+
+            if (!result.TryAdd(poolId, new TextPoolDefinition(poolId, items)))
+            {
+                errors.Add(new QuestValidationError("text_pool.id.duplicate", $"Text pool id '{poolId}' must be unique.", poolPath));
+            }
+        }
+
+        return result;
     }
 
     private static NodeDefinition? CompileScene(
@@ -571,6 +623,8 @@ public sealed class AuthoringQuestLoader : IQuestLoader
         public Dictionary<string, int>? Variables { get; init; }
 
         public Dictionary<string, bool>? Flags { get; init; }
+
+        public Dictionary<string, List<string?>?>? TextPools { get; init; }
 
         public Dictionary<string, AuthoringSceneDto>? Scenes { get; init; }
     }
