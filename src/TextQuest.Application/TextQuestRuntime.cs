@@ -1,3 +1,5 @@
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using TextQuest.Application.Abstractions;
 using TextQuest.Application.Models;
 using TextQuest.Domain.Enums;
@@ -11,11 +13,31 @@ namespace TextQuest.Application;
 /// </summary>
 public sealed class TextQuestRuntime : ITextQuestRuntime
 {
+    private static readonly EventId GameStartRequestedEvent = new(2000, "GameStartRequested");
+    private static readonly EventId GameStartedEvent = new(2001, "GameStarted");
+    private static readonly EventId ChoiceApplyRequestedEvent = new(2002, "ChoiceApplyRequested");
+    private static readonly EventId ChoiceRejectedCompletedEvent = new(2003, "ChoiceRejectedCompleted");
+    private static readonly EventId ChoiceRejectedUnavailableEvent = new(2004, "ChoiceRejectedUnavailable");
+    private static readonly EventId ChoiceAppliedEvent = new(2005, "ChoiceApplied");
+    private static readonly EventId BranchTransitionResolvedEvent = new(2006, "BranchTransitionResolved");
+    private static readonly EventId GameRestoreRequestedEvent = new(2007, "GameRestoreRequested");
+    private static readonly EventId GameRestoredEvent = new(2008, "GameRestored");
+    private static readonly EventId QuestStateMismatchEvent = new(2009, "QuestStateMismatch");
+
+    private readonly ILogger<TextQuestRuntime> _logger;
+
+    public TextQuestRuntime(ILogger<TextQuestRuntime>? logger = null)
+    {
+        _logger = logger ?? NullLogger<TextQuestRuntime>.Instance;
+    }
+
     /// <inheritdoc />
     public Task<RuntimeSession> StartNewGameAsync(QuestDefinition definition, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
         ArgumentNullException.ThrowIfNull(definition);
+
+        _logger.LogInformation(GameStartRequestedEvent, "Starting new game for quest {QuestId} version {QuestVersion} from node {StartNodeId}", definition.QuestId, definition.Version, definition.StartNodeId);
 
         var gameState = new GameState(
             definition.QuestId,
@@ -27,7 +49,9 @@ public sealed class TextQuestRuntime : ITextQuestRuntime
             [],
             GameStatus.InProgress);
 
-        return Task.FromResult(CreateSession(definition, gameState));
+        var session = CreateSession(definition, gameState);
+        _logger.LogInformation(GameStartedEvent, "Started game for quest {QuestId} at node {CurrentNodeId} with {ChoiceCount} available choices", definition.QuestId, session.GameState.CurrentNodeId, session.PresentableState.Choices.Count);
+        return Task.FromResult(session);
     }
 
     /// <inheritdoc />
@@ -46,11 +70,15 @@ public sealed class TextQuestRuntime : ITextQuestRuntime
             throw new ArgumentException("Choice id must not be empty.", nameof(choiceId));
         }
 
-        var normalizedState = NormalizeState(definition, EnsureQuestMatches(definition, gameState));
+        var matchingState = EnsureQuestMatches(definition, gameState);
+        var normalizedState = NormalizeState(definition, matchingState);
         var currentNode = GetNode(definition, normalizedState.CurrentNodeId);
+
+        _logger.LogInformation(ChoiceApplyRequestedEvent, "Applying choice {ChoiceId} in quest {QuestId} from node {CurrentNodeId}", choiceId, definition.QuestId, currentNode.Id);
 
         if (normalizedState.Status == GameStatus.Completed || currentNode is EndNodeDefinition)
         {
+            _logger.LogWarning(ChoiceRejectedCompletedEvent, "Rejected choice {ChoiceId} because quest {QuestId} is already completed at node {CurrentNodeId}", choiceId, definition.QuestId, currentNode.Id);
             throw new InvalidOperationException("Cannot apply a choice after the quest is completed.");
         }
 
@@ -59,6 +87,7 @@ public sealed class TextQuestRuntime : ITextQuestRuntime
 
         if (selectedChoice is null)
         {
+            _logger.LogWarning(ChoiceRejectedUnavailableEvent, "Rejected unavailable choice {ChoiceId} in quest {QuestId} at node {CurrentNodeId}", choiceId, definition.QuestId, currentNode.Id);
             throw new InvalidChoiceException(choiceId, currentNode.Id);
         }
 
@@ -72,7 +101,9 @@ public sealed class TextQuestRuntime : ITextQuestRuntime
             Append(normalizedState.DecisionHistory, new DecisionRecord(currentNode.Id, selectedChoice.Id)),
             GameStatus.InProgress);
 
-        return Task.FromResult(CreateSession(definition, updatedState));
+        var session = CreateSession(definition, updatedState);
+        _logger.LogInformation(ChoiceAppliedEvent, "Applied choice {ChoiceId} in quest {QuestId}: {FromNodeId} -> {ToNodeId} with status {Status}", selectedChoice.Id, definition.QuestId, currentNode.Id, session.GameState.CurrentNodeId, session.GameState.Status);
+        return Task.FromResult(session);
     }
 
     /// <inheritdoc />
@@ -85,10 +116,14 @@ public sealed class TextQuestRuntime : ITextQuestRuntime
         ArgumentNullException.ThrowIfNull(definition);
         ArgumentNullException.ThrowIfNull(gameState);
 
-        return Task.FromResult(CreateSession(definition, EnsureQuestMatches(definition, gameState)));
+        _logger.LogInformation(GameRestoreRequestedEvent, "Restoring game for quest {QuestId} version {QuestVersion} from node {CurrentNodeId}", gameState.QuestId, gameState.QuestVersion, gameState.CurrentNodeId);
+
+        var session = CreateSession(definition, EnsureQuestMatches(definition, gameState));
+        _logger.LogInformation(GameRestoredEvent, "Restored game for quest {QuestId} at node {CurrentNodeId} with status {Status}", session.GameState.QuestId, session.GameState.CurrentNodeId, session.GameState.Status);
+        return Task.FromResult(session);
     }
 
-    private static RuntimeSession CreateSession(QuestDefinition definition, GameState gameState)
+    private RuntimeSession CreateSession(QuestDefinition definition, GameState gameState)
     {
         var normalizedState = NormalizeState(definition, gameState);
         var node = GetNode(definition, normalizedState.CurrentNodeId);
@@ -105,7 +140,7 @@ public sealed class TextQuestRuntime : ITextQuestRuntime
                 node is EndNodeDefinition endNode ? endNode.Result : null));
     }
 
-    private static GameState NormalizeState(QuestDefinition definition, GameState gameState)
+    private GameState NormalizeState(QuestDefinition definition, GameState gameState)
     {
         var currentState = gameState;
 
@@ -122,6 +157,7 @@ public sealed class TextQuestRuntime : ITextQuestRuntime
             }
 
             var nextNodeId = ResolveBranch(branchNode, currentState);
+            _logger.LogDebug(BranchTransitionResolvedEvent, "Resolved branch transition in quest {QuestId}: {FromNodeId} -> {ToNodeId}", definition.QuestId, branchNode.Id, nextNodeId);
             currentState = currentState with
             {
                 CurrentNodeId = nextNodeId,
@@ -143,27 +179,30 @@ public sealed class TextQuestRuntime : ITextQuestRuntime
         return node;
     }
 
-    private static GameState EnsureQuestMatches(QuestDefinition definition, GameState gameState)
+    private GameState EnsureQuestMatches(QuestDefinition definition, GameState gameState)
     {
         if (!string.Equals(definition.QuestId, gameState.QuestId, StringComparison.Ordinal)
             || !string.Equals(definition.Version, gameState.QuestVersion, StringComparison.Ordinal))
         {
+            _logger.LogWarning(QuestStateMismatchEvent, "Game state quest identity mismatch. Expected {QuestId}/{QuestVersion}, got {StateQuestId}/{StateQuestVersion}", definition.QuestId, definition.Version, gameState.QuestId, gameState.QuestVersion);
             throw new InvalidOperationException("Game state does not belong to the provided quest definition.");
         }
 
         return gameState;
     }
 
-    private static string ResolveBranch(BranchNodeDefinition branchNode, GameState gameState)
+    private string ResolveBranch(BranchNodeDefinition branchNode, GameState gameState)
     {
         foreach (var branch in branchNode.Branches)
         {
             if (branch.Conditions.All(condition => EvaluateCondition(condition, gameState.Variables, gameState.Flags)))
             {
+                _logger.LogDebug(BranchTransitionResolvedEvent, "Matched conditional branch from {FromNodeId} to {ToNodeId}", branchNode.Id, branch.NextNodeId);
                 return branch.NextNodeId;
             }
         }
 
+        _logger.LogDebug(BranchTransitionResolvedEvent, "Falling back to default branch from {FromNodeId} to {ToNodeId}", branchNode.Id, branchNode.DefaultNextNodeId);
         return branchNode.DefaultNextNodeId;
     }
 

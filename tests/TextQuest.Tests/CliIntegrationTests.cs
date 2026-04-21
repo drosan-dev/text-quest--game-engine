@@ -31,7 +31,14 @@ public sealed class CliIntegrationTests : IDisposable
         Assert.Contains("Сохранение 'slot-a' загружено.", standardOutput, StringComparison.Ordinal);
         Assert.Contains("Замок поддается, и вы бесшумно исчезаете в коридоре.", standardOutput, StringComparison.Ordinal);
         Assert.Contains("Результат: victory", standardOutput, StringComparison.Ordinal);
-        Assert.True(string.IsNullOrWhiteSpace(standardError), standardError);
+        Assert.Contains("\"eventName\":\"QuestLoaded\"", standardError, StringComparison.Ordinal);
+        Assert.Contains("\"eventName\":\"GameStarted\"", standardError, StringComparison.Ordinal);
+        Assert.Contains("\"eventName\":\"ChoiceApplied\"", standardError, StringComparison.Ordinal);
+        Assert.Contains("\"eventName\":\"BranchTransitionResolved\"", standardError, StringComparison.Ordinal);
+        Assert.Contains("\"eventName\":\"SaveWritten\"", standardError, StringComparison.Ordinal);
+        Assert.Contains("\"eventName\":\"SaveLoaded\"", standardError, StringComparison.Ordinal);
+        Assert.Contains("\"level\":\"Information\"", standardError, StringComparison.Ordinal);
+        Assert.Contains("\"level\":\"Debug\"", standardError, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -49,7 +56,8 @@ public sealed class CliIntegrationTests : IDisposable
 
         Assert.Equal(0, process.ExitCode);
         Assert.Contains("Выход из игры.", standardOutput, StringComparison.Ordinal);
-        Assert.True(string.IsNullOrWhiteSpace(standardError), standardError);
+        Assert.Contains("\"eventName\":\"QuestLoaded\"", standardError, StringComparison.Ordinal);
+        Assert.Contains("\"eventName\":\"GameStarted\"", standardError, StringComparison.Ordinal);
     }
 
     private static Process StartCliProcess(string questPath, string savesDirectory)
@@ -73,6 +81,8 @@ public sealed class CliIntegrationTests : IDisposable
             RedirectStandardError = true,
             UseShellExecute = false,
         };
+
+        startInfo.Environment["TEXTQUEST_LOG_LEVEL"] = "Debug";
 
         return Process.Start(startInfo) ?? throw new InvalidOperationException("Failed to start TextQuest CLI process.");
     }

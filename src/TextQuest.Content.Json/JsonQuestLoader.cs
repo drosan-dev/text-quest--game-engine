@@ -1,8 +1,10 @@
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
+using System.Text.Json;
 using TextQuest.Application.Abstractions;
 using TextQuest.Application.Models;
 using TextQuest.Domain.Enums;
 using TextQuest.Domain.Models;
-using System.Text.Json;
 
 namespace TextQuest.Content.Json;
 
@@ -11,7 +13,21 @@ namespace TextQuest.Content.Json;
 /// </summary>
 public sealed class JsonQuestLoader : IQuestLoader
 {
+    private static readonly EventId QuestLoadStartedEvent = new(1000, "QuestLoadStarted");
+    private static readonly EventId QuestSourceReadEvent = new(1001, "QuestSourceRead");
+    private static readonly EventId QuestJsonMalformedEvent = new(1002, "QuestJsonMalformed");
+    private static readonly EventId QuestMappingFailedEvent = new(1003, "QuestMappingFailed");
+    private static readonly EventId QuestValidationFailedEvent = new(1004, "QuestValidationFailed");
+    private static readonly EventId QuestLoadedEvent = new(1005, "QuestLoaded");
+    private static readonly EventId QuestLoadReadFailedEvent = new(1006, "QuestLoadReadFailed");
+
     private readonly JsonQuestValidator _validator = new();
+    private readonly ILogger<JsonQuestLoader> _logger;
+
+    public JsonQuestLoader(ILogger<JsonQuestLoader>? logger = null)
+    {
+        _logger = logger ?? NullLogger<JsonQuestLoader>.Instance;
+    }
 
     /// <inheritdoc />
     public Task<QuestDefinition> LoadAsync(string source, CancellationToken cancellationToken = default)
@@ -26,7 +42,25 @@ public sealed class JsonQuestLoader : IQuestLoader
             throw new ArgumentException("Quest source path must not be empty.", nameof(source));
         }
 
-        var json = await File.ReadAllTextAsync(source, cancellationToken);
+        _logger.LogInformation(QuestLoadStartedEvent, "Loading quest definition from {QuestSource}", source);
+
+        string json;
+        try
+        {
+            json = await File.ReadAllTextAsync(source, cancellationToken);
+        }
+        catch (UnauthorizedAccessException exception)
+        {
+            _logger.LogError(QuestLoadReadFailedEvent, exception, "Failed to read quest source {QuestSource}", source);
+            throw;
+        }
+        catch (IOException exception)
+        {
+            _logger.LogError(QuestLoadReadFailedEvent, exception, "Failed to read quest source {QuestSource}", source);
+            throw;
+        }
+
+        _logger.LogDebug(QuestSourceReadEvent, "Read quest source {QuestSource} with {CharacterCount} characters", source, json.Length);
 
         QuestDocumentDto? document;
 
@@ -36,6 +70,7 @@ public sealed class JsonQuestLoader : IQuestLoader
         }
         catch (JsonException exception)
         {
+            _logger.LogWarning(QuestJsonMalformedEvent, exception, "Quest source {QuestSource} contains malformed JSON at {JsonPath}", source, CreateJsonPath(exception.Path));
             throw new QuestValidationException(
             [
                 new QuestValidationError(
@@ -47,6 +82,7 @@ public sealed class JsonQuestLoader : IQuestLoader
 
         if (document is null)
         {
+            _logger.LogWarning(QuestJsonMalformedEvent, "Quest source {QuestSource} is empty after deserialization", source);
             throw new QuestValidationException(
             [
                 new QuestValidationError("json.empty", "Quest JSON document is empty.", "$")
@@ -89,6 +125,7 @@ public sealed class JsonQuestLoader : IQuestLoader
 
         if (mappingErrors.Count > 0)
         {
+            _logger.LogWarning(QuestMappingFailedEvent, "Quest source {QuestSource} failed mapping with {ErrorCount} errors", source, mappingErrors.Count);
             throw new QuestValidationException(mappingErrors);
         }
 
@@ -104,8 +141,11 @@ public sealed class JsonQuestLoader : IQuestLoader
         var validationResult = _validator.Validate(definition);
         if (!validationResult.IsValid)
         {
+            _logger.LogWarning(QuestValidationFailedEvent, "Quest {QuestId} version {QuestVersion} failed validation with {ErrorCount} errors", definition.QuestId, definition.Version, validationResult.Errors.Count);
             throw new QuestValidationException(validationResult.Errors);
         }
+
+        _logger.LogInformation(QuestLoadedEvent, "Loaded quest {QuestId} version {QuestVersion} with {NodeCount} nodes from {QuestSource}", definition.QuestId, definition.Version, definition.Nodes.Count, source);
 
         return definition;
     }

@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using TextQuest.Application;
 using TextQuest.Application.Abstractions;
 using TextQuest.Application.Models;
@@ -10,12 +11,15 @@ return await RunAsync(args);
 
 static async Task<int> RunAsync(string[] args)
 {
+    using var loggerFactory = CreateLoggerFactory();
+    var logger = loggerFactory.CreateLogger("TextQuest.Cli.Program");
+
     try
     {
         var options = ParseOptions(args);
-        IQuestLoader loader = new JsonQuestLoader();
-        ITextQuestRuntime runtime = new TextQuestRuntime();
-        ISaveStore saveStore = new FileSystemSaveStore(options.SavesDirectory);
+        IQuestLoader loader = new JsonQuestLoader(loggerFactory.CreateLogger<JsonQuestLoader>());
+        ITextQuestRuntime runtime = new TextQuestRuntime(loggerFactory.CreateLogger<TextQuestRuntime>());
+        ISaveStore saveStore = new FileSystemSaveStore(options.SavesDirectory, loggerFactory.CreateLogger<FileSystemSaveStore>());
 
         var definition = await loader.LoadAsync(options.QuestPath);
         var session = await runtime.StartNewGameAsync(definition);
@@ -87,11 +91,35 @@ static async Task<int> RunAsync(string[] args)
             session = await runtime.ApplyChoiceAsync(definition, session.GameState, selectedChoice.Id);
         }
     }
-    catch (Exception exception) when (exception is QuestValidationException or InvalidChoiceException or IOException or InvalidOperationException or ArgumentException or InvalidDataException or JsonException)
+    catch (Exception exception) when (exception is QuestValidationException or InvalidChoiceException or IOException or UnauthorizedAccessException or InvalidOperationException or ArgumentException or InvalidDataException or JsonException)
     {
+        logger.LogError(exception, "CLI execution failed");
         Console.Error.WriteLine(exception.Message);
         return 1;
     }
+}
+
+static ILoggerFactory CreateLoggerFactory()
+{
+    var minimumLevel = ParseLogLevel(Environment.GetEnvironmentVariable("TEXTQUEST_LOG_LEVEL")) ?? LogLevel.Warning;
+
+    return LoggerFactory.Create(builder =>
+    {
+        builder.SetMinimumLevel(minimumLevel);
+        builder.AddProvider(new StructuredConsoleLoggerProvider());
+    });
+}
+
+static LogLevel? ParseLogLevel(string? value)
+{
+    if (string.IsNullOrWhiteSpace(value))
+    {
+        return null;
+    }
+
+    return Enum.TryParse<LogLevel>(value, ignoreCase: true, out var level)
+        ? level
+        : null;
 }
 
 static CliOptions ParseOptions(string[] args)
