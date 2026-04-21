@@ -21,21 +21,112 @@ static async Task<int> RunAsync(string[] args)
         var textRenderer = new TextRenderer();
         ITextQuestRuntime runtime = new TextQuestRuntime(textRenderer, loggerFactory.CreateLogger<TextQuestRuntime>());
         ISaveStore saveStore = new FileSystemSaveStore(options.SavesDirectory, loggerFactory.CreateLogger<FileSystemSaveStore>());
+        var ui = TerminalUi.Create();
 
         var definition = await loader.LoadAsync(options.QuestPath);
         var session = await runtime.StartNewGameAsync(definition);
 
+        var status = TerminalStatus.None;
+        var selectedIndex = 0;
+
+        using var uiSession = ui.BeginSession();
+
         while (true)
         {
-            RenderState(session.PresentableState);
+            if (ui.IsInteractive)
+            {
+                ui.RenderScreen(session.PresentableState, selectedIndex, status);
+
+                if (session.PresentableState.IsCompleted)
+                {
+                    status = new TerminalStatus(TerminalStatusKind.Success, $"Квест завершен. Результат: {session.PresentableState.Result ?? "unknown"} (Q для выхода)");
+                    ui.RenderScreen(session.PresentableState, selectedIndex, status);
+                    while (true)
+                    {
+                        var key = Console.ReadKey(intercept: true);
+                        if (key.Key == ConsoleKey.Q || key.Key == ConsoleKey.Escape || key.Key == ConsoleKey.Enter)
+                        {
+                            return 0;
+                        }
+                    }
+                }
+
+                var action = ui.ReadAction(session.PresentableState, ref selectedIndex);
+                switch (action.Kind)
+                {
+                    case TerminalActionKind.NavigationChanged:
+                        status = TerminalStatus.None;
+                        continue;
+
+                    case TerminalActionKind.Exit:
+                        return 0;
+
+                    case TerminalActionKind.Save:
+                    {
+                        var saveId = action.Argument ?? "quick";
+                        await saveStore.SaveAsync(saveId, session.GameState);
+                        status = new TerminalStatus(TerminalStatusKind.Success, $"Сохранение '{saveId}' записано.");
+                        continue;
+                    }
+
+                    case TerminalActionKind.Load:
+                    {
+                        var saveId = action.Argument ?? "quick";
+                        var savedState = await saveStore.LoadAsync(saveId);
+                        if (savedState is null)
+                        {
+                            status = new TerminalStatus(TerminalStatusKind.Warning, $"Сохранение '{saveId}' не найдено.");
+                            continue;
+                        }
+
+                        session = await runtime.RestoreAsync(definition, savedState);
+                        selectedIndex = 0;
+                        status = new TerminalStatus(TerminalStatusKind.Success, $"Сохранение '{saveId}' загружено.");
+                        continue;
+                    }
+
+                    case TerminalActionKind.Choose:
+                    {
+                        if (action.Argument is null)
+                        {
+                            status = new TerminalStatus(TerminalStatusKind.Error, "Некорректный выбор.");
+                            continue;
+                        }
+
+                        var beforeNodeId = session.PresentableState.CurrentNodeId;
+                        var beforeChoices = session.PresentableState.Choices;
+                        var chosenText = beforeChoices.FirstOrDefault(choice => string.Equals(choice.Id, action.Argument, StringComparison.Ordinal))?.Text
+                            ?? action.Argument;
+
+                        session = await runtime.ApplyChoiceAsync(definition, session.GameState, action.Argument);
+
+                        var afterNodeId = session.PresentableState.CurrentNodeId;
+                        if (!string.Equals(beforeNodeId, afterNodeId, StringComparison.Ordinal))
+                        {
+                            selectedIndex = 0;
+                        }
+                        else
+                        {
+                            selectedIndex = Math.Clamp(selectedIndex, 0, Math.Max(0, session.PresentableState.Choices.Count - 1));
+                        }
+
+                        status = new TerminalStatus(TerminalStatusKind.Success, $"Сделано: {chosenText}");
+                        continue;
+                    }
+                }
+
+                continue;
+            }
+
+            ui.RenderStateLineMode(session.PresentableState);
 
             if (session.PresentableState.IsCompleted)
             {
-                Console.WriteLine($"\nКвест завершен. Результат: {session.PresentableState.Result ?? "unknown"}");
+                ui.WriteSuccess($"Квест завершен. Результат: {session.PresentableState.Result ?? "unknown"}");
                 return 0;
             }
 
-            Console.Write("\n> ");
+            ui.WritePrompt();
             var input = Console.ReadLine();
             if (input is null)
             {
@@ -45,46 +136,46 @@ static async Task<int> RunAsync(string[] args)
             var command = input.Trim();
             if (command.Length == 0)
             {
-                Console.WriteLine("Введите номер выбора или команду: save [id], load [id], exit.");
+                ui.WriteInfo("Введите номер выбора или команду: save [id], load [id], exit.");
                 continue;
             }
 
             if (string.Equals(command, "exit", StringComparison.OrdinalIgnoreCase))
             {
-                Console.WriteLine("Выход из игры.");
+                ui.WriteInfo("Выход из игры.");
                 return 0;
             }
 
-            if (TryParseSaveCommand(command, out var saveId))
+            if (TryParseSaveCommand(command, out var saveIdLineMode))
             {
-                await saveStore.SaveAsync(saveId, session.GameState);
-                Console.WriteLine($"Сохранение '{saveId}' записано.");
+                await saveStore.SaveAsync(saveIdLineMode, session.GameState);
+                ui.WriteSuccess($"Сохранение '{saveIdLineMode}' записано.");
                 continue;
             }
 
-            if (TryParseLoadCommand(command, out saveId))
+            if (TryParseLoadCommand(command, out saveIdLineMode))
             {
-                var savedState = await saveStore.LoadAsync(saveId);
+                var savedState = await saveStore.LoadAsync(saveIdLineMode);
                 if (savedState is null)
                 {
-                    Console.WriteLine($"Сохранение '{saveId}' не найдено.");
+                    ui.WriteWarning($"Сохранение '{saveIdLineMode}' не найдено.");
                     continue;
                 }
 
                 session = await runtime.RestoreAsync(definition, savedState);
-                Console.WriteLine($"Сохранение '{saveId}' загружено.");
+                ui.WriteSuccess($"Сохранение '{saveIdLineMode}' загружено.");
                 continue;
             }
 
             if (!int.TryParse(command, out var choiceNumber))
             {
-                Console.WriteLine("Неверный ввод. Используйте номер выбора или команды save/load/exit.");
+                ui.WriteWarning("Неверный ввод. Используйте номер выбора или команды save/load/exit.");
                 continue;
             }
 
             if (choiceNumber < 1 || choiceNumber > session.PresentableState.Choices.Count)
             {
-                Console.WriteLine("Выбор вне диапазона доступных вариантов.");
+                ui.WriteWarning("Выбор вне диапазона доступных вариантов.");
                 continue;
             }
 
@@ -223,32 +314,6 @@ static bool TryParseNamedCommand(string input, string commandName, out string ar
 
     argument = parts.Length > 1 ? parts[1] : "quick";
     return true;
-}
-
-static void RenderState(PresentableState state)
-{
-    Console.WriteLine();
-    Console.WriteLine(state.Title);
-    Console.WriteLine(new string('=', state.Title.Length));
-
-    foreach (var textBlock in state.TextBlocks)
-    {
-        Console.WriteLine(textBlock);
-    }
-
-    if (state.IsCompleted)
-    {
-        return;
-    }
-
-    Console.WriteLine();
-    for (var index = 0; index < state.Choices.Count; index++)
-    {
-        var choice = state.Choices[index];
-        Console.WriteLine($"{index + 1}. {choice.Text}");
-    }
-
-    Console.WriteLine("Команды: save [id], load [id], exit");
 }
 
 internal enum QuestInputFormat
