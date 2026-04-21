@@ -10,11 +10,14 @@ public sealed class TextQuestRuntimeTests
 {
     private static readonly string RepositoryRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../../"));
 
+    private static TextQuestRuntime CreateRuntime() => new(new TextRenderer());
+
     [Fact]
     public async Task StartNewGameAsync_ShouldReturnIntroPresentation()
     {
         var definition = await LoadDemoQuestAsync();
-        var runtime = new TextQuestRuntime();
+        var textRenderer = new TextRenderer();
+        var runtime = new TextQuestRuntime(textRenderer);
 
         var session = await runtime.StartNewGameAsync(definition);
 
@@ -29,7 +32,7 @@ public sealed class TextQuestRuntimeTests
     public async Task ApplyChoiceAsync_ShouldCompleteDemoQuestWithVictoryBranch()
     {
         var definition = await LoadDemoQuestAsync();
-        var runtime = new TextQuestRuntime();
+        var runtime = CreateRuntime();
 
         var startedSession = await runtime.StartNewGameAsync(definition);
         var corridorSession = await runtime.ApplyChoiceAsync(definition, startedSession.GameState, "search_straw");
@@ -48,7 +51,7 @@ public sealed class TextQuestRuntimeTests
     public async Task ApplyChoiceAsync_ShouldHideUnavailableChoicesBasedOnState()
     {
         var definition = await LoadDemoQuestAsync();
-        var runtime = new TextQuestRuntime();
+        var runtime = CreateRuntime();
 
         var startedSession = await runtime.StartNewGameAsync(definition);
         var corridorSession = await runtime.ApplyChoiceAsync(definition, startedSession.GameState, "call_guard");
@@ -63,7 +66,7 @@ public sealed class TextQuestRuntimeTests
     public async Task ApplyChoiceAsync_ShouldFollowDefaultBranchWhenConditionsDoNotMatch()
     {
         var definition = await LoadDemoQuestAsync();
-        var runtime = new TextQuestRuntime();
+        var runtime = CreateRuntime();
 
         var startedSession = await runtime.StartNewGameAsync(definition);
         var corridorSession = await runtime.ApplyChoiceAsync(definition, startedSession.GameState, "call_guard");
@@ -129,7 +132,7 @@ public sealed class TextQuestRuntimeTests
         """;
 
         var definition = await LoadQuestFromJsonAsync(questJson);
-        var runtime = new TextQuestRuntime();
+        var runtime = CreateRuntime();
 
         var startedSession = await runtime.StartNewGameAsync(definition);
         var completedSession = await runtime.ApplyChoiceAsync(definition, startedSession.GameState, "go");
@@ -143,7 +146,7 @@ public sealed class TextQuestRuntimeTests
     public async Task ApplyChoiceAsync_ShouldRejectUnavailableChoice()
     {
         var definition = await LoadDemoQuestAsync();
-        var runtime = new TextQuestRuntime();
+        var runtime = CreateRuntime();
 
         var startedSession = await runtime.StartNewGameAsync(definition);
         var corridorSession = await runtime.ApplyChoiceAsync(definition, startedSession.GameState, "call_guard");
@@ -158,7 +161,7 @@ public sealed class TextQuestRuntimeTests
     public async Task RestoreAsync_ShouldRebuildPresentationFromExistingState()
     {
         var definition = await LoadDemoQuestAsync();
-        var runtime = new TextQuestRuntime();
+        var runtime = CreateRuntime();
         var restoredState = new GameState(
             definition.QuestId,
             definition.Version,

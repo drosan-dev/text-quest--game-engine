@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using TextQuest.Application.Abstractions;
 using TextQuest.Application.Models;
 using TextQuest.Domain.Models;
@@ -9,6 +10,8 @@ namespace TextQuest.Content.Json;
 /// </summary>
 public sealed class JsonQuestValidator : IQuestValidator
 {
+    private static readonly Regex VariablePattern = new(@"\{\{([^}]+)\}\}", RegexOptions.Compiled);
+    private static readonly Regex ConditionalPattern = new(@"\[if\s+(!?)(\w+)\](.*?)\[endif\]", RegexOptions.Compiled | RegexOptions.Singleline);
     /// <inheritdoc />
     public QuestValidationResult Validate(QuestDefinition definition)
     {
@@ -74,7 +77,7 @@ public sealed class JsonQuestValidator : IQuestValidator
 
             if (node is not BranchNodeDefinition)
             {
-                RequireText(node.Text, nodePath + ".text", errors, nodeId);
+                RequireText(node.Text, nodePath + ".text", errors, nodeId, definition.InitialVariables, definition.InitialFlags);
             }
 
             switch (node)
@@ -174,6 +177,12 @@ public sealed class JsonQuestValidator : IQuestValidator
 
             RequireValue(choice.Id, choicePath + ".id", "Choice id is required.", errors, nodeId: nodeId);
             RequireValue(choice.Text, choicePath + ".text", "Choice text is required.", errors, nodeId: nodeId, choiceId: choice.Id);
+
+            if (!string.IsNullOrWhiteSpace(choice.Text))
+            {
+                ValidateTextTemplates(choice.Text, choicePath + ".text", errors, nodeId, variables, flags, choice.Id);
+            }
+
             RequireValue(choice.NextNodeId, choicePath + ".nextNodeId", "Choice next node id is required.", errors, nodeId: nodeId, choiceId: choice.Id);
 
             if (!string.IsNullOrWhiteSpace(choice.Id) && !choiceIds.Add(choice.Id))
@@ -425,12 +434,95 @@ public sealed class JsonQuestValidator : IQuestValidator
         }
     }
 
+    private static void ValidateTextTemplates(
+        string text,
+        string path,
+        List<QuestValidationError> errors,
+        string? nodeId,
+        IReadOnlyDictionary<string, int> variables,
+        IReadOnlyDictionary<string, bool> flags,
+        string? choiceId = null)
+    {
+        // Validate template syntax structure
+        var openVariableCount = Regex.Matches(text, @"\{\{").Count;
+        var closeVariableCount = Regex.Matches(text, @"\}\}").Count;
+        if (openVariableCount != closeVariableCount)
+        {
+            AddError(
+                errors,
+                "text.template.malformed_variables",
+                "Text template has unmatched variable braces {{ or }}.",
+                path,
+                nodeId: nodeId,
+                choiceId: choiceId,
+                expected: "balanced {{ and }} pairs",
+                actual: $"{openVariableCount} open, {closeVariableCount} close");
+        }
+
+        var ifCount = Regex.Matches(text, @"\[if").Count;
+        var endifCount = Regex.Matches(text, @"\[endif\]").Count;
+        if (ifCount != endifCount)
+        {
+            AddError(
+                errors,
+                "text.template.malformed_conditionals",
+                "Text template has unmatched conditional blocks [if or [endif].",
+                path,
+                nodeId: nodeId,
+                choiceId: choiceId,
+                expected: "balanced [if and [endif] pairs",
+                actual: $"{ifCount} [if, {endifCount} [endif]");
+        }
+
+        // Validate variable substitutions {{variable}}
+        foreach (Match match in VariablePattern.Matches(text))
+        {
+            var variableName = match.Groups[1].Value;
+            if (!variables.ContainsKey(variableName))
+            {
+                AddError(
+                    errors,
+                    "text.variable.missing",
+                    $"Variable '{variableName}' referenced in text template is not defined.",
+                    path,
+                    nodeId: nodeId,
+                    choiceId: choiceId,
+                    expected: "defined variable name",
+                    actual: FormatValue(variableName));
+            }
+        }
+
+        // Validate conditionals [if flag]...[endif]
+        foreach (Match match in ConditionalPattern.Matches(text))
+        {
+            var flagName = match.Groups[2].Value;
+            if (!flags.ContainsKey(flagName))
+            {
+                AddError(
+                    errors,
+                    "text.flag.missing",
+                    $"Flag '{flagName}' referenced in text template conditional is not defined.",
+                    path,
+                    nodeId: nodeId,
+                    choiceId: choiceId,
+                    expected: "defined flag name",
+                    actual: FormatValue(flagName));
+            }
+        }
+    }
+
     private static bool IsIntegerValue(object? value)
     {
         return value is int or long;
     }
 
-    private static void RequireText(IReadOnlyList<string> text, string path, List<QuestValidationError> errors, string? nodeId = null)
+    private static void RequireText(
+        IReadOnlyList<string> text,
+        string path,
+        List<QuestValidationError> errors,
+        string? nodeId,
+        IReadOnlyDictionary<string, int> variables,
+        IReadOnlyDictionary<string, bool> flags)
     {
         if (text.Count == 0)
         {
@@ -440,9 +532,16 @@ public sealed class JsonQuestValidator : IQuestValidator
 
         for (var lineIndex = 0; lineIndex < text.Count; lineIndex++)
         {
-            if (string.IsNullOrWhiteSpace(text[lineIndex]))
+            var line = text[lineIndex];
+            var linePath = $"{path}[{lineIndex}]";
+
+            if (string.IsNullOrWhiteSpace(line))
             {
-                AddError(errors, "node.text.line_empty", "Text line must not be empty.", $"{path}[{lineIndex}]", nodeId: nodeId, expected: "non-empty text line", actual: FormatValue(text[lineIndex]));
+                AddError(errors, "node.text.line_empty", "Text line must not be empty.", linePath, nodeId: nodeId, expected: "non-empty text line", actual: FormatValue(line));
+            }
+            else
+            {
+                ValidateTextTemplates(line, linePath, errors, nodeId, variables, flags);
             }
         }
     }

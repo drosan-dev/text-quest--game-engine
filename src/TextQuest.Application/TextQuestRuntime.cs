@@ -25,9 +25,11 @@ public sealed class TextQuestRuntime : ITextQuestRuntime
     private static readonly EventId QuestStateMismatchEvent = new(2009, "QuestStateMismatch");
 
     private readonly ILogger<TextQuestRuntime> _logger;
+    private readonly ITextRenderer _textRenderer;
 
-    public TextQuestRuntime(ILogger<TextQuestRuntime>? logger = null)
+    public TextQuestRuntime(ITextRenderer textRenderer, ILogger<TextQuestRuntime>? logger = null)
     {
+        _textRenderer = textRenderer ?? throw new ArgumentNullException(nameof(textRenderer));
         _logger = logger ?? NullLogger<TextQuestRuntime>.Instance;
     }
 
@@ -128,13 +130,15 @@ public sealed class TextQuestRuntime : ITextQuestRuntime
         var normalizedState = NormalizeState(definition, gameState);
         var node = GetNode(definition, normalizedState.CurrentNodeId);
 
+        var renderedTextBlocks = node.Text.Select(text => _textRenderer.Render(text, normalizedState)).ToArray();
+
         return new RuntimeSession(
             normalizedState,
             new PresentableState(
                 definition.QuestId,
                 definition.Title,
                 node.Id,
-                node.Text,
+                renderedTextBlocks,
                 CreateChoiceViewModels(node, normalizedState),
                 normalizedState.Status == GameStatus.Completed,
                 node is EndNodeDefinition endNode ? endNode.Result : null));
@@ -221,10 +225,10 @@ public sealed class TextQuestRuntime : ITextQuestRuntime
             .ToArray();
     }
 
-    private static IReadOnlyList<ChoiceViewModel> CreateChoiceViewModels(NodeDefinition node, GameState gameState)
+    private IReadOnlyList<ChoiceViewModel> CreateChoiceViewModels(NodeDefinition node, GameState gameState)
     {
         return GetAvailableChoices(node, gameState)
-            .Select(choice => new ChoiceViewModel(choice.Id, choice.Text))
+            .Select(choice => new ChoiceViewModel(choice.Id, _textRenderer.Render(choice.Text, gameState)))
             .ToArray();
     }
 

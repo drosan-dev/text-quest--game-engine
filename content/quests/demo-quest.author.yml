@@ -13,6 +13,7 @@ scenes:
   intro:
     text:
       - Вы приходите в себя в сырой камере.
+      - "Ваш уровень решимости: {{resolve}}."
       - Под дверью виден тонкий луч света.
     choices:
       - id: search_straw
@@ -26,7 +27,8 @@ scenes:
 
   corridor_decision:
     type: decision
-    text: Шаги в коридоре затихают, и у вас появляется шанс действовать.
+    text: "Шаги в коридоре затихают, и у вас появляется шанс действовать.
+      У вас [if hasKey]есть ключ[endif][if !hasKey]нет ключа[endif]."
     choices:
       - id: unlock_door
         text: Попробовать открыть дверь ключом
@@ -47,7 +49,8 @@ scenes:
     default: captured
 
   escape:
-    text: Замок поддается, и вы бесшумно исчезаете в коридоре.
+    text: "Замок поддается, и вы бесшумно исчезаете в коридоре.
+      Ваш уровень решимости: {{resolve}}."
     result: victory
 
   captured:

@@ -18,7 +18,8 @@ static async Task<int> RunAsync(string[] args)
     {
         var options = ParseOptions(args);
         IQuestLoader loader = CreateQuestLoader(options.QuestFormat, loggerFactory);
-        ITextQuestRuntime runtime = new TextQuestRuntime(loggerFactory.CreateLogger<TextQuestRuntime>());
+        var textRenderer = new TextRenderer();
+        ITextQuestRuntime runtime = new TextQuestRuntime(textRenderer, loggerFactory.CreateLogger<TextQuestRuntime>());
         ISaveStore saveStore = new FileSystemSaveStore(options.SavesDirectory, loggerFactory.CreateLogger<FileSystemSaveStore>());
 
         var definition = await loader.LoadAsync(options.QuestPath);
