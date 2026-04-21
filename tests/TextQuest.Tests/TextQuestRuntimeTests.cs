@@ -60,6 +60,25 @@ public sealed class TextQuestRuntimeTests
     }
 
     [Fact]
+    public async Task ApplyChoiceAsync_ShouldFollowDefaultBranchWhenConditionsDoNotMatch()
+    {
+        var definition = await LoadDemoQuestAsync();
+        var runtime = new TextQuestRuntime();
+
+        var startedSession = await runtime.StartNewGameAsync(definition);
+        var corridorSession = await runtime.ApplyChoiceAsync(definition, startedSession.GameState, "call_guard");
+        var completedSession = await runtime.ApplyChoiceAsync(definition, corridorSession.GameState, "force_door");
+
+        Assert.Equal("captured", completedSession.GameState.CurrentNodeId);
+        Assert.Equal(GameStatus.Completed, completedSession.GameState.Status);
+        Assert.False(completedSession.GameState.Flags["hasKey"]);
+        Assert.Equal(1, completedSession.GameState.Variables["resolve"]);
+        Assert.Equal(new[] { "intro", "corridor_decision", "outcome_branch", "captured" }, completedSession.GameState.VisitedNodeIds);
+        Assert.Equal("defeat", completedSession.PresentableState.Result);
+        Assert.True(completedSession.PresentableState.IsCompleted);
+    }
+
+    [Fact]
     public async Task ApplyChoiceAsync_ShouldApplyVariableAndFlagEffectsWithoutAmbiguousSetType()
     {
         const string questJson = """
