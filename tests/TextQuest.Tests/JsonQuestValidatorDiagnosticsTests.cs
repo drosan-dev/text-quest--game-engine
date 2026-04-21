@@ -20,6 +20,7 @@ public sealed class JsonQuestValidatorDiagnosticsTests
                 ["resolve"] = 0,
             },
             new Dictionary<string, bool>(StringComparer.Ordinal),
+            new Dictionary<string, TextPoolDefinition>(StringComparer.Ordinal),
             new Dictionary<string, NodeDefinition>(StringComparer.Ordinal)
             {
                 ["intro"] = new TextNodeDefinition(
@@ -70,6 +71,7 @@ public sealed class JsonQuestValidatorDiagnosticsTests
             {
                 ["hasKey"] = false,
             },
+            new Dictionary<string, TextPoolDefinition>(StringComparer.Ordinal),
             new Dictionary<string, NodeDefinition>(StringComparer.Ordinal)
             {
                 ["intro"] = new TextNodeDefinition(
@@ -81,7 +83,7 @@ public sealed class JsonQuestValidatorDiagnosticsTests
                             "[endif] Go",
                             "end",
                             null,
-                            null)
+                            [new EffectDefinition("add", "resolve", true)])
                     ]),
                 ["end"] = new EndNodeDefinition("end", ["Done"], "ok"),
             });
@@ -94,9 +96,10 @@ public sealed class JsonQuestValidatorDiagnosticsTests
         Assert.Equal("intro", malformedVariablesError.NodeId);
         Assert.Equal("$.nodes['intro'].text[0]", malformedVariablesError.Path);
 
-        var malformedConditionalsError = Assert.Single(result.Errors.Where(error => error.Code == "text.template.malformed_conditionals"));
-        Assert.Equal("intro", malformedConditionalsError.NodeId);
-        Assert.Equal("$.nodes['intro'].text[1]", malformedConditionalsError.Path);
+        var malformedConditionalsErrors = result.Errors.Where(error => error.Code == "text.template.malformed_conditionals").ToArray();
+        Assert.Equal(2, malformedConditionalsErrors.Length);
+        Assert.Contains(malformedConditionalsErrors, error => error.NodeId == "intro" && error.Path == "$.nodes['intro'].text[1]");
+        Assert.Contains(malformedConditionalsErrors, error => error.NodeId == "intro" && error.ChoiceId == "go" && error.Path == "$.nodes['intro'].choices[0].text");
 
         var effectValueError = Assert.Single(result.Errors.Where(error => error.Code == "effect.value.invalid_for_variable"));
         Assert.Equal("$.nodes['intro'].choices[0].effects[0].value", effectValueError.Path);

@@ -1,4 +1,3 @@
-using System.Text.RegularExpressions;
 using TextQuest.Application.Abstractions;
 using TextQuest.Domain.Models;
 
@@ -41,9 +40,10 @@ internal readonly struct TemplateSegment
 public sealed class TextRenderer : ITextRenderer
 {
     private const int MaxTemplateNestingDepth = 10;
-
-    private static readonly Regex VariablePattern = new(@"\{\{([^}]+)\}\}", RegexOptions.Compiled);
-    private static readonly Regex ConditionalPattern = new(@"\[if\s+(!?)(\w+)\](.*?)\[endif\]", RegexOptions.Compiled | RegexOptions.Singleline);
+    private const string VariableOpen = "{{";
+    private const string VariableClose = "}}";
+    private const string ConditionalOpen = "[if";
+    private const string ConditionalClose = "[endif]";
 
     private readonly Dictionary<string, IReadOnlyList<TemplateSegment>> _templateCache = new();
 
@@ -62,65 +62,159 @@ public sealed class TextRenderer : ITextRenderer
             return cached;
         }
 
-        var segments = new List<TemplateSegment>();
-        var remaining = template;
-        var offset = 0;
-
-        // Process conditionals first (outermost)
-        var conditionalMatches = ConditionalPattern.Matches(template);
-        foreach (Match match in conditionalMatches)
-        {
-            // Add literal before the match
-            if (match.Index > offset)
-            {
-                segments.Add(new TemplateSegment(SegmentType.Literal, template[offset..match.Index]));
-            }
-
-            var negated = match.Groups[1].Value == "!";
-            var flagName = match.Groups[2].Value;
-            var content = match.Groups[3].Value;
-            var contentSegments = CompileTemplate(content, depth + 1); // Recursively compile content
-            segments.Add(new TemplateSegment(SegmentType.Conditional, string.Empty, contentSegments, flagName, negated));
-
-            offset = match.Index + match.Length;
-        }
-
-        // Add remaining literal
-        if (offset < template.Length)
-        {
-            remaining = template[offset..];
-        }
-        else
-        {
-            remaining = string.Empty;
-        }
-
-        // Now process variables in the remaining text
-        var variableMatches = VariablePattern.Matches(remaining);
-        offset = 0;
-        foreach (Match match in variableMatches)
-        {
-            // Add literal before the match
-            if (match.Index > offset)
-            {
-                segments.Add(new TemplateSegment(SegmentType.Literal, remaining[offset..match.Index]));
-            }
-
-            var variableName = match.Groups[1].Value;
-            segments.Add(new TemplateSegment(SegmentType.Variable, string.Empty, null, variableName));
-
-            offset = match.Index + match.Length;
-        }
-
-        // Add final literal
-        if (offset < remaining.Length)
-        {
-            segments.Add(new TemplateSegment(SegmentType.Literal, remaining[offset..]));
-        }
-
-        var compiled = segments.AsReadOnly();
+        var compiled = CompileSegments(template, depth).AsReadOnly();
         _templateCache[template] = compiled;
         return compiled;
+    }
+
+    private List<TemplateSegment> CompileSegments(string template, int depth)
+    {
+        var segments = new List<TemplateSegment>();
+        var index = 0;
+
+        while (index < template.Length)
+        {
+            var nextVariable = template.IndexOf(VariableOpen, index, StringComparison.Ordinal);
+            var nextConditional = template.IndexOf(ConditionalOpen, index, StringComparison.Ordinal);
+
+            var nextToken = FindNextTokenIndex(nextVariable, nextConditional);
+            if (nextToken < 0)
+            {
+                segments.Add(new TemplateSegment(SegmentType.Literal, template[index..]));
+                break;
+            }
+
+            if (nextToken > index)
+            {
+                segments.Add(new TemplateSegment(SegmentType.Literal, template[index..nextToken]));
+            }
+
+            if (nextToken == nextVariable)
+            {
+                var closeIndex = template.IndexOf(VariableClose, nextVariable + VariableOpen.Length, StringComparison.Ordinal);
+                if (closeIndex < 0)
+                {
+                    segments.Add(new TemplateSegment(SegmentType.Literal, template[nextVariable..]));
+                    break;
+                }
+
+                var name = template.Substring(nextVariable + VariableOpen.Length, closeIndex - (nextVariable + VariableOpen.Length)).Trim();
+                segments.Add(new TemplateSegment(SegmentType.Variable, string.Empty, null, name));
+                index = closeIndex + VariableClose.Length;
+                continue;
+            }
+
+            var conditionalHeaderClose = template.IndexOf(']', nextConditional);
+            if (conditionalHeaderClose < 0)
+            {
+                segments.Add(new TemplateSegment(SegmentType.Literal, template[nextConditional..]));
+                break;
+            }
+
+            var header = template.Substring(nextConditional + ConditionalOpen.Length, conditionalHeaderClose - (nextConditional + ConditionalOpen.Length)).Trim();
+            if (!TryParseConditionalHeader(header, out var flagName, out var negated))
+            {
+                segments.Add(new TemplateSegment(SegmentType.Literal, template[nextConditional..(conditionalHeaderClose + 1)]));
+                index = conditionalHeaderClose + 1;
+                continue;
+            }
+
+            var contentStart = conditionalHeaderClose + 1;
+            var conditionalCloseIndex = FindMatchingEndif(template, contentStart);
+            if (conditionalCloseIndex < 0)
+            {
+                segments.Add(new TemplateSegment(SegmentType.Literal, template[nextConditional..]));
+                break;
+            }
+
+            var content = template.Substring(contentStart, conditionalCloseIndex - contentStart);
+            var contentSegments = CompileTemplate(content, depth + 1);
+            segments.Add(new TemplateSegment(SegmentType.Conditional, string.Empty, contentSegments, flagName, negated));
+            index = conditionalCloseIndex + ConditionalClose.Length;
+        }
+
+        return segments;
+    }
+
+    private static int FindNextTokenIndex(int variableIndex, int conditionalIndex)
+    {
+        if (variableIndex < 0)
+        {
+            return conditionalIndex;
+        }
+
+        if (conditionalIndex < 0)
+        {
+            return variableIndex;
+        }
+
+        return Math.Min(variableIndex, conditionalIndex);
+    }
+
+    private static bool TryParseConditionalHeader(string header, out string flagName, out bool negated)
+    {
+        // header is everything between "[if" and "]", e.g. "hasKey" or "!hasKey"
+        var value = header.Trim();
+        negated = false;
+
+        if (value.StartsWith("!", StringComparison.Ordinal))
+        {
+            negated = true;
+            value = value[1..].Trim();
+        }
+
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            flagName = string.Empty;
+            return false;
+        }
+
+        for (var i = 0; i < value.Length; i++)
+        {
+            var ch = value[i];
+            if (!char.IsLetterOrDigit(ch) && ch != '_')
+            {
+                flagName = string.Empty;
+                return false;
+            }
+        }
+
+        flagName = value;
+        return true;
+    }
+
+    private static int FindMatchingEndif(string template, int startIndex)
+    {
+        var index = startIndex;
+        var depth = 1;
+
+        while (index < template.Length)
+        {
+            var nextIf = template.IndexOf(ConditionalOpen, index, StringComparison.Ordinal);
+            var nextEndif = template.IndexOf(ConditionalClose, index, StringComparison.Ordinal);
+
+            if (nextEndif < 0)
+            {
+                return -1;
+            }
+
+            if (nextIf >= 0 && nextIf < nextEndif)
+            {
+                depth++;
+                index = nextIf + ConditionalOpen.Length;
+                continue;
+            }
+
+            depth--;
+            if (depth == 0)
+            {
+                return nextEndif;
+            }
+
+            index = nextEndif + ConditionalClose.Length;
+        }
+
+        return -1;
     }
 
     /// <summary>

@@ -26,10 +26,25 @@ public sealed class TextQuestRuntime : ITextQuestRuntime
 
     private readonly ILogger<TextQuestRuntime> _logger;
     private readonly ITextRenderer _textRenderer;
+    private readonly TextPoolTemplateExpander _textPoolExpander;
+    private readonly IRandomProvider _randomProvider;
+
+    public TextQuestRuntime()
+        : this(new TextRenderer(), new DeterministicRandomProvider(), null)
+    {
+    }
 
     public TextQuestRuntime(ITextRenderer textRenderer, ILogger<TextQuestRuntime>? logger = null)
+        : this(textRenderer, new DeterministicRandomProvider(), logger)
+    {
+    }
+
+    public TextQuestRuntime(ITextRenderer textRenderer, IRandomProvider randomProvider, ILogger<TextQuestRuntime>? logger = null)
     {
         _textRenderer = textRenderer ?? throw new ArgumentNullException(nameof(textRenderer));
+        ArgumentNullException.ThrowIfNull(randomProvider);
+        _randomProvider = randomProvider;
+        _textPoolExpander = new TextPoolTemplateExpander(randomProvider);
         _logger = logger ?? NullLogger<TextQuestRuntime>.Instance;
     }
 
@@ -41,12 +56,16 @@ public sealed class TextQuestRuntime : ITextQuestRuntime
 
         _logger.LogInformation(GameStartRequestedEvent, "Starting new game for quest {QuestId} version {QuestVersion} from node {StartNodeId}", definition.QuestId, definition.Version, definition.StartNodeId);
 
+        var seed = _randomProvider.CreateSeed();
+
         var gameState = new GameState(
             definition.QuestId,
             definition.Version,
             definition.StartNodeId,
             CloneVariables(definition.InitialVariables),
             CloneFlags(definition.InitialFlags),
+            seed,
+            new Dictionary<string, int>(StringComparer.Ordinal),
             [definition.StartNodeId],
             [],
             GameStatus.InProgress);
@@ -99,6 +118,8 @@ public sealed class TextQuestRuntime : ITextQuestRuntime
             selectedChoice.NextNodeId,
             ApplyEffectsToVariables(normalizedState.Variables, selectedChoice.Effects),
             ApplyEffectsToFlags(normalizedState.Flags, selectedChoice.Effects),
+            normalizedState.RandomSeed,
+            normalizedState.RandomSelections,
             Append(normalizedState.VisitedNodeIds, selectedChoice.NextNodeId),
             Append(normalizedState.DecisionHistory, new DecisionRecord(currentNode.Id, selectedChoice.Id)),
             GameStatus.InProgress);
@@ -130,17 +151,27 @@ public sealed class TextQuestRuntime : ITextQuestRuntime
         var normalizedState = NormalizeState(definition, gameState);
         var node = GetNode(definition, normalizedState.CurrentNodeId);
 
-        var renderedTextBlocks = node.Text.Select(text => _textRenderer.Render(text, normalizedState)).ToArray();
+        var currentState = normalizedState;
+        var renderedTextBlocks = new string[node.Text.Count];
+
+        for (var index = 0; index < node.Text.Count; index++)
+        {
+            var (template, updatedState) = _textPoolExpander.Expand(node.Text[index], definition, currentState, $"node:{node.Id}:text:{index}");
+            currentState = updatedState;
+            renderedTextBlocks[index] = _textRenderer.Render(template, currentState);
+        }
+
+        var choices = CreateChoiceViewModels(node, currentState, definition, out currentState);
 
         return new RuntimeSession(
-            normalizedState,
+            currentState,
             new PresentableState(
                 definition.QuestId,
                 definition.Title,
                 node.Id,
                 renderedTextBlocks,
-                CreateChoiceViewModels(node, normalizedState),
-                normalizedState.Status == GameStatus.Completed,
+                choices,
+                currentState.Status == GameStatus.Completed,
                 node is EndNodeDefinition endNode ? endNode.Result : null));
     }
 
@@ -225,11 +256,24 @@ public sealed class TextQuestRuntime : ITextQuestRuntime
             .ToArray();
     }
 
-    private IReadOnlyList<ChoiceViewModel> CreateChoiceViewModels(NodeDefinition node, GameState gameState)
+    private IReadOnlyList<ChoiceViewModel> CreateChoiceViewModels(
+        NodeDefinition node,
+        GameState gameState,
+        QuestDefinition definition,
+        out GameState updatedState)
     {
-        return GetAvailableChoices(node, gameState)
-            .Select(choice => new ChoiceViewModel(choice.Id, _textRenderer.Render(choice.Text, gameState)))
-            .ToArray();
+        var state = gameState;
+        var viewModels = new List<ChoiceViewModel>();
+
+        foreach (var choice in GetAvailableChoices(node, state))
+        {
+            var (template, nextState) = _textPoolExpander.Expand(choice.Text, definition, state, $"node:{node.Id}:choice:{choice.Id}");
+            state = nextState;
+            viewModels.Add(new ChoiceViewModel(choice.Id, _textRenderer.Render(template, state)));
+        }
+
+        updatedState = state;
+        return viewModels.ToArray();
     }
 
     private static IReadOnlyDictionary<string, int> ApplyEffectsToVariables(

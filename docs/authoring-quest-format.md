@@ -23,6 +23,11 @@ vars:
 flags:
   hasKey: false
 
+textPools:
+  cell_flavor:
+    - В углу пахнет плесенью и мокрой соломой.
+    - Где-то за стеной капает вода, мерно отбивая время.
+
 scenes:
   intro:
     text: Вы приходите в себя в сырой камере.
@@ -39,6 +44,7 @@ scenes:
 - `vars` - предпочтительный псевдоним для `variables`.
 - `variables` - поддерживается как явное runtime-совместимое имя.
 - `flags` - объект `string -> bool`.
+- `textPools` - опциональный объект `poolId -> string[]` с текстовыми пулами (используются через `{{pool:poolId}}`).
 - `scenes` - обязательный объект `sceneId -> scene definition`.
 
 ## Общая Форма Сцены

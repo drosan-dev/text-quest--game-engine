@@ -57,6 +57,8 @@ public sealed class JsonQuestValidator : IQuestValidator
             }
         }
 
+        ValidateTextPools(definition.TextPools, errors);
+
         foreach (var (nodeId, node) in definition.Nodes)
         {
             var nodePath = BuildNodePath(nodeId);
@@ -77,17 +79,17 @@ public sealed class JsonQuestValidator : IQuestValidator
 
             if (node is not BranchNodeDefinition)
             {
-                RequireText(node.Text, nodePath + ".text", errors, nodeId, definition.InitialVariables, definition.InitialFlags);
+                RequireText(node.Text, nodePath + ".text", errors, nodeId, definition.InitialVariables, definition.InitialFlags, definition.TextPools);
             }
 
             switch (node)
             {
                 case TextNodeDefinition textNode:
-                    ValidateChoices(textNode.Choices, definition.InitialVariables, definition.InitialFlags, definition.Nodes, nodeId, nodePath + ".choices", errors);
+                    ValidateChoices(textNode.Choices, definition.InitialVariables, definition.InitialFlags, definition.TextPools, definition.Nodes, nodeId, nodePath + ".choices", errors);
                     break;
 
                 case DecisionNodeDefinition decisionNode:
-                    ValidateChoices(decisionNode.Choices, definition.InitialVariables, definition.InitialFlags, definition.Nodes, nodeId, nodePath + ".choices", errors);
+                    ValidateChoices(decisionNode.Choices, definition.InitialVariables, definition.InitialFlags, definition.TextPools, definition.Nodes, nodeId, nodePath + ".choices", errors);
                     break;
 
                 case BranchNodeDefinition branchNode:
@@ -157,6 +159,7 @@ public sealed class JsonQuestValidator : IQuestValidator
         IReadOnlyList<ChoiceDefinition> choices,
         IReadOnlyDictionary<string, int> variables,
         IReadOnlyDictionary<string, bool> flags,
+        IReadOnlyDictionary<string, TextPoolDefinition> textPools,
         IReadOnlyDictionary<string, NodeDefinition> nodes,
         string nodeId,
         string path,
@@ -180,7 +183,7 @@ public sealed class JsonQuestValidator : IQuestValidator
 
             if (!string.IsNullOrWhiteSpace(choice.Text))
             {
-                ValidateTextTemplates(choice.Text, choicePath + ".text", errors, nodeId, variables, flags, choice.Id);
+                ValidateTextTemplates(choice.Text, choicePath + ".text", errors, nodeId, variables, flags, textPools, choice.Id);
             }
 
             RequireValue(choice.NextNodeId, choicePath + ".nextNodeId", "Choice next node id is required.", errors, nodeId: nodeId, choiceId: choice.Id);
@@ -441,6 +444,7 @@ public sealed class JsonQuestValidator : IQuestValidator
         string? nodeId,
         IReadOnlyDictionary<string, int> variables,
         IReadOnlyDictionary<string, bool> flags,
+        IReadOnlyDictionary<string, TextPoolDefinition> textPools,
         string? choiceId = null)
     {
         // Validate template syntax structure
@@ -477,18 +481,51 @@ public sealed class JsonQuestValidator : IQuestValidator
         // Validate variable substitutions {{variable}}
         foreach (Match match in VariablePattern.Matches(text))
         {
-            var variableName = match.Groups[1].Value;
-            if (!variables.ContainsKey(variableName))
+            var token = match.Groups[1].Value.Trim();
+
+            if (TryParsePoolToken(token, out var poolId))
+            {
+                if (!textPools.ContainsKey(poolId))
+                {
+                    AddError(
+                        errors,
+                        "text.pool.missing",
+                        $"Text pool '{poolId}' referenced in template is not defined.",
+                        path,
+                        nodeId: nodeId,
+                        choiceId: choiceId,
+                        expected: "defined text pool id",
+                        actual: FormatValue(poolId));
+                }
+
+                continue;
+            }
+
+            if (token.StartsWith("pool:", StringComparison.OrdinalIgnoreCase))
+            {
+                AddError(
+                    errors,
+                    "text.pool.invalid",
+                    "Text pool reference must have non-empty id in form {{pool:poolId}}.",
+                    path,
+                    nodeId: nodeId,
+                    choiceId: choiceId,
+                    expected: "{{pool:poolId}}",
+                    actual: FormatValue(token));
+                continue;
+            }
+
+            if (!variables.ContainsKey(token))
             {
                 AddError(
                     errors,
                     "text.variable.missing",
-                    $"Variable '{variableName}' referenced in text template is not defined.",
+                    $"Variable '{token}' referenced in text template is not defined.",
                     path,
                     nodeId: nodeId,
                     choiceId: choiceId,
                     expected: "defined variable name",
-                    actual: FormatValue(variableName));
+                    actual: FormatValue(token));
             }
         }
 
@@ -522,7 +559,8 @@ public sealed class JsonQuestValidator : IQuestValidator
         List<QuestValidationError> errors,
         string? nodeId,
         IReadOnlyDictionary<string, int> variables,
-        IReadOnlyDictionary<string, bool> flags)
+        IReadOnlyDictionary<string, bool> flags,
+        IReadOnlyDictionary<string, TextPoolDefinition> textPools)
     {
         if (text.Count == 0)
         {
@@ -541,9 +579,48 @@ public sealed class JsonQuestValidator : IQuestValidator
             }
             else
             {
-                ValidateTextTemplates(line, linePath, errors, nodeId, variables, flags);
+                ValidateTextTemplates(line, linePath, errors, nodeId, variables, flags, textPools);
             }
         }
+    }
+
+    private static void ValidateTextPools(IReadOnlyDictionary<string, TextPoolDefinition> textPools, List<QuestValidationError> errors)
+    {
+        foreach (var (poolId, pool) in textPools)
+        {
+            var poolPath = $"$.textPools['{poolId.Replace("'", "\\'", StringComparison.Ordinal)}']";
+
+            if (string.IsNullOrWhiteSpace(poolId) || string.IsNullOrWhiteSpace(pool.Id))
+            {
+                AddError(errors, "text_pool.id.required", "Text pool id must not be empty.", poolPath, expected: "non-empty pool id", actual: FormatValue(poolId));
+                continue;
+            }
+
+            if (pool.Items.Count == 0)
+            {
+                AddError(errors, "text_pool.items.empty", $"Text pool '{poolId}' must contain at least one item.", poolPath, expected: "at least 1 item", actual: pool.Items.Count.ToString());
+            }
+
+            for (var index = 0; index < pool.Items.Count; index++)
+            {
+                if (string.IsNullOrWhiteSpace(pool.Items[index]))
+                {
+                    AddError(errors, "text_pool.item.required", $"Text pool '{poolId}' must contain only non-empty strings.", $"{poolPath}[{index}]", expected: "non-empty string", actual: FormatValue(pool.Items[index]));
+                }
+            }
+        }
+    }
+
+    private static bool TryParsePoolToken(string token, out string poolId)
+    {
+        if (token.StartsWith("pool:", StringComparison.OrdinalIgnoreCase))
+        {
+            poolId = token["pool:".Length..].Trim();
+            return !string.IsNullOrWhiteSpace(poolId);
+        }
+
+        poolId = string.Empty;
+        return false;
     }
 
     private static void RequireValue(

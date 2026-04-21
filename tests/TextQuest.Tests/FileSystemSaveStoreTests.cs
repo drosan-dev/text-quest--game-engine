@@ -28,6 +28,11 @@ public sealed class FileSystemSaveStoreTests : IDisposable
             {
                 ["hasKey"] = true,
             },
+            123,
+            new Dictionary<string, int>(StringComparer.Ordinal)
+            {
+                ["node:intro:text:1|cell_flavor|0"] = 1,
+            },
             ["intro", "corridor_decision"],
             [new DecisionRecord("intro", "search_straw")],
             GameStatus.InProgress);
@@ -91,7 +96,7 @@ public sealed class FileSystemSaveStoreTests : IDisposable
     public async Task SaveLoadRestoreFlow_ShouldContinueQuestFromSameNodeAndState()
     {
         var loader = new JsonQuestLoader();
-        var runtime = new TextQuestRuntime();
+        var runtime = new TextQuestRuntime(new TextRenderer(), new FixedSeedRandomProvider(seed: 42));
         var store = new FileSystemSaveStore(savesDirectory);
         var definition = await loader.LoadAsync(Path.Combine(RepositoryRoot, "content", "quests", "demo-quest.json"));
 
@@ -102,6 +107,7 @@ public sealed class FileSystemSaveStoreTests : IDisposable
         var restoredSession = await runtime.RestoreAsync(definition, loadedState!);
         var completedSession = await runtime.ApplyChoiceAsync(definition, restoredSession.GameState, "unlock_door");
 
+        // Assert
         AssertEquivalent(savedSession.GameState, loadedState!);
         Assert.Equal("corridor_decision", restoredSession.GameState.CurrentNodeId);
         Assert.True(restoredSession.GameState.Flags["hasKey"]);
@@ -118,6 +124,8 @@ public sealed class FileSystemSaveStoreTests : IDisposable
         Assert.Equal(expected.Status, actual.Status);
         Assert.Equal(expected.Variables.OrderBy(pair => pair.Key), actual.Variables.OrderBy(pair => pair.Key));
         Assert.Equal(expected.Flags.OrderBy(pair => pair.Key), actual.Flags.OrderBy(pair => pair.Key));
+        Assert.Equal(expected.RandomSeed, actual.RandomSeed);
+        Assert.Equal(expected.RandomSelections.OrderBy(pair => pair.Key), actual.RandomSelections.OrderBy(pair => pair.Key));
         Assert.Equal(expected.VisitedNodeIds, actual.VisitedNodeIds);
         Assert.Equal(expected.DecisionHistory, actual.DecisionHistory);
     }
