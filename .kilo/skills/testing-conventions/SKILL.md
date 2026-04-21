@@ -9,6 +9,8 @@ description: This skill should be used when creating or updating automated tests
 
 Use this skill when writing or editing tests in this repository. Keep test code aligned with the local expectations for readability and maintenance.
 
+If test changes accompany behavior changes in production code, keep the corresponding factual documentation in sync in the same change set instead of leaving docs to a follow-up task.
+
 ## Required Rules
 
 1. Add summary documentation for tests in Russian when the language and framework support it.
@@ -47,3 +49,4 @@ public void Should_DoSomething_WhenCondition()
 1. Apply these conventions to new tests by default.
 2. When modifying existing tests, bring the touched tests into compliance when the change is local and low-risk.
 3. Do not rewrite large unaffected test files only to add summaries or AAA formatting.
+4. When the test change reflects new actual behavior, ensure the relevant factual docs such as `docs/current-state.md`, `docs/json-quest-format.md`, `docs/cli.md`, or `docs/adapter-extension-points.md` are updated together with the code.

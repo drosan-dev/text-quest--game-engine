@@ -53,7 +53,9 @@ TEXTQUEST_LOG_LEVEL=Debug dotnet run --project src/TextQuest.Cli -- --quest cont
 
 ## Документация
 
+- `docs/README.md` - карта документации и рекомендованный порядок чтения.
+- `docs/current-state.md` - текущее состояние реализованного MVP и репозитория.
 - `docs/cli.md` - запуск CLI и параметры.
 - `docs/json-quest-format.md` - зафиксированный JSON-формат квеста MVP.
 - `docs/technical-vision.md` - архитектурный контекст.
-- `docs/mvp-plan.md` - план поставки MVP.
+- `docs/mvp-plan.md` - завершенный план поставки MVP.
