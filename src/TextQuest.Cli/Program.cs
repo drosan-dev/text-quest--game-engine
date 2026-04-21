@@ -146,7 +146,7 @@ static CliOptions ParseOptions(string[] args)
                 break;
 
             default:
-                throw new ArgumentException($"Unknown argument '{args[index]}'. Supported arguments: --quest <path>, --quest-format <runtime-json|authoring-yaml>, --saves-dir <path>.");
+                throw new ArgumentException($"Unknown argument '{args[index]}'. Supported arguments: --quest <path>, --quest-format <runtime-json|authoring-yaml|timeline-yaml>, --saves-dir <path>.");
         }
     }
 
@@ -162,6 +162,7 @@ static IQuestLoader CreateQuestLoader(QuestInputFormat format, ILoggerFactory lo
     {
         QuestInputFormat.RuntimeJson => new JsonQuestLoader(loggerFactory.CreateLogger<JsonQuestLoader>()),
         QuestInputFormat.AuthoringYaml => new AuthoringQuestLoader(loggerFactory.CreateLogger<AuthoringQuestLoader>()),
+        QuestInputFormat.TimelineYaml => new TimelineCampaignLoader(loggerFactory.CreateLogger<TimelineCampaignLoader>()),
         _ => throw new ArgumentOutOfRangeException(nameof(format), format, "Unsupported quest input format."),
     };
 }
@@ -172,7 +173,8 @@ static QuestInputFormat ParseQuestFormat(string value)
     {
         "runtime-json" or "runtime" or "json" => QuestInputFormat.RuntimeJson,
         "authoring-yaml" or "authoring" or "author" => QuestInputFormat.AuthoringYaml,
-        _ => throw new ArgumentException($"Unsupported quest format '{value}'. Supported values: runtime-json, authoring-yaml."),
+        "timeline-yaml" or "timeline" => QuestInputFormat.TimelineYaml,
+        _ => throw new ArgumentException($"Unsupported quest format '{value}'. Supported values: runtime-json, authoring-yaml, timeline-yaml."),
     };
 }
 
@@ -189,8 +191,15 @@ static string ReadOptionValue(string[] args, ref int index, string optionName)
 
 static string GetDefaultQuestPath(QuestInputFormat format)
 {
-    var fileName = format == QuestInputFormat.AuthoringYaml ? "demo-quest.author.yml" : "demo-quest.json";
-    return Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "content", "quests", fileName));
+    var fileName = format switch
+    {
+        QuestInputFormat.AuthoringYaml => "demo-quest.author.yml",
+        QuestInputFormat.TimelineYaml => Path.Combine("demo-campaign", "campaign.yml"),
+        _ => "demo-quest.json",
+    };
+
+    var folder = format == QuestInputFormat.TimelineYaml ? "timeline" : "quests";
+    return Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "content", folder, fileName));
 }
 
 static bool TryParseSaveCommand(string input, out string saveId)
@@ -246,6 +255,7 @@ internal enum QuestInputFormat
 {
     RuntimeJson,
     AuthoringYaml,
+    TimelineYaml,
 }
 
 internal sealed record CliOptions(string QuestPath, string? SavesDirectory, QuestInputFormat QuestFormat);

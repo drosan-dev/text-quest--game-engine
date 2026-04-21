@@ -1,0 +1,21 @@
+questId: demo_timeline
+version: 1.0.0
+title: "Demo: дни, персонажи, локации"
+days: 3
+
+vars:
+  day: 1
+
+flags:
+  world_door_open: false
+
+characters:
+  - id: alice
+    name: Алиса
+    startLocation: home
+    hangoverText: "Алиса просыпается с похмельем. Голова раскалывается."
+
+  - id: bob
+    name: Боб
+    startLocation: home
+    hangoverText: "У Боба похмелье. Кажется, вчера было лишнее."

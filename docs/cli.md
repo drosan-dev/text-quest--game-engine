@@ -4,6 +4,7 @@
 
 - `docs/README.md` - карта документации.
 - `docs/authoring-quest-format.md` - упрощенный authoring-формат и его ограничения.
+- `docs/authoring-timeline-format.md` - формат timeline-кампаний (campaign.yml + локации).
 - `docs/technical-vision.md` - место CLI в архитектуре.
 - `docs/adapter-extension-points.md` - контракт, через который должен работать любой новый адаптер.
 
@@ -31,6 +32,12 @@ dotnet run --project src/TextQuest.Cli -- --quest content/quests/demo-quest.json
 dotnet run --project src/TextQuest.Cli -- --quest-format authoring-yaml --quest content/quests/demo-quest.author.yml --saves-dir ./.local/saves
 ```
 
+Запуск demo timeline-кампании:
+
+```bash
+dotnet run --project src/TextQuest.Cli -- --quest-format timeline-yaml --quest content/timeline/demo-campaign/campaign.yml --saves-dir ./.local/saves
+```
+
 CLI также умеет стартовать без явного `--quest` и тогда использует встроенный путь по умолчанию:
 
 ```bash
@@ -38,11 +45,12 @@ dotnet run --project src/TextQuest.Cli -- --saves-dir ./.local/saves
 ```
 
 Если добавить `--quest-format authoring-yaml`, по умолчанию будет использован `content/quests/demo-quest.author.yml`.
+Если добавить `--quest-format timeline-yaml`, по умолчанию будет использован `content/timeline/demo-campaign/campaign.yml`.
 
 ## Аргументы
 
-- `--quest <path>` - путь к runtime JSON-файлу квеста или к authoring YAML-файлу, в зависимости от `--quest-format`.
-- `--quest-format <runtime-json|authoring-yaml>` - выбрать прямую загрузку runtime JSON или компиляцию authoring YAML перед запуском.
+- `--quest <path>` - путь к входному файлу контента в зависимости от `--quest-format` (runtime JSON, authoring YAML или timeline campaign.yml).
+- `--quest-format <runtime-json|authoring-yaml|timeline-yaml>` - выбрать формат входного контента.
 - `--saves-dir <path>` - директория для файлов сохранений.
 
 Если `--saves-dir` не указан, используется стандартная директория файлового save store, определяемая infrastructure-слоем.
