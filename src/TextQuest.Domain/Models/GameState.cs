@@ -2,6 +2,9 @@ using TextQuest.Domain.Enums;
 
 namespace TextQuest.Domain.Models;
 
+/// <summary>
+/// Хранит текущее состояние прохождения квеста игроком.
+/// </summary>
 public sealed record GameState(
     string QuestId,
     string QuestVersion,

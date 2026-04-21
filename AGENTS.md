@@ -12,3 +12,7 @@
 
 - `/finish-task` merges the current task branch into `dev` with `--no-ff`.
 - `main` remains the release branch; do not merge task branches directly into `main` unless the user explicitly asks for that release flow.
+
+## Conventions
+
+- Use the `repository-conventions` skill when creating commits or writing tests in this repository.

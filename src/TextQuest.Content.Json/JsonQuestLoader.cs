@@ -6,10 +6,14 @@ using System.Text.Json;
 
 namespace TextQuest.Content.Json;
 
+/// <summary>
+/// Загружает квест из JSON-файла и преобразует его в доменную модель.
+/// </summary>
 public sealed class JsonQuestLoader : IQuestLoader
 {
     private readonly JsonQuestValidator _validator = new();
 
+    /// <inheritdoc />
     public Task<QuestDefinition> LoadAsync(string source, CancellationToken cancellationToken = default)
     {
         return LoadCoreAsync(source, cancellationToken);

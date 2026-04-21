@@ -4,8 +4,12 @@ using TextQuest.Domain.Models;
 
 namespace TextQuest.Content.Json;
 
+/// <summary>
+/// Проверяет JSON-представление квеста после преобразования в доменную модель.
+/// </summary>
 public sealed class JsonQuestValidator : IQuestValidator
 {
+    /// <inheritdoc />
     public QuestValidationResult Validate(QuestDefinition definition)
     {
         ArgumentNullException.ThrowIfNull(definition);
@@ -75,11 +79,11 @@ public sealed class JsonQuestValidator : IQuestValidator
             switch (node)
             {
                 case TextNodeDefinition textNode:
-                    ValidateChoices(textNode.Choices, definition.Nodes, nodePath + ".choices", errors);
+                    ValidateChoices(textNode.Choices, definition.InitialVariables, definition.InitialFlags, definition.Nodes, nodePath + ".choices", errors);
                     break;
 
                 case DecisionNodeDefinition decisionNode:
-                    ValidateChoices(decisionNode.Choices, definition.Nodes, nodePath + ".choices", errors);
+                    ValidateChoices(decisionNode.Choices, definition.InitialVariables, definition.InitialFlags, definition.Nodes, nodePath + ".choices", errors);
                     break;
 
                 case BranchNodeDefinition branchNode:
@@ -119,7 +123,7 @@ public sealed class JsonQuestValidator : IQuestValidator
                                 branchPath + ".conditions"));
                         }
 
-                        ValidateConditions(branch.Conditions, branchPath + ".conditions", errors);
+                        ValidateConditions(branch.Conditions, definition.InitialVariables, definition.InitialFlags, branchPath + ".conditions", errors);
                         RequireValue(branch.NextNodeId, branchPath + ".nextNodeId", "Branch next node id is required.", errors);
 
                         if (!string.IsNullOrWhiteSpace(branch.NextNodeId) && !definition.Nodes.ContainsKey(branch.NextNodeId))
@@ -144,6 +148,8 @@ public sealed class JsonQuestValidator : IQuestValidator
 
     private static void ValidateChoices(
         IReadOnlyList<ChoiceDefinition> choices,
+        IReadOnlyDictionary<string, int> variables,
+        IReadOnlyDictionary<string, bool> flags,
         IReadOnlyDictionary<string, NodeDefinition> nodes,
         string path,
         List<QuestValidationError> errors)
@@ -181,13 +187,15 @@ public sealed class JsonQuestValidator : IQuestValidator
                     choicePath + ".nextNodeId"));
             }
 
-            ValidateConditions(choice.Conditions ?? Array.Empty<ConditionDefinition>(), choicePath + ".conditions", errors);
-            ValidateEffects(choice.Effects ?? Array.Empty<EffectDefinition>(), choicePath + ".effects", errors);
+            ValidateConditions(choice.Conditions ?? Array.Empty<ConditionDefinition>(), variables, flags, choicePath + ".conditions", errors);
+            ValidateEffects(choice.Effects ?? Array.Empty<EffectDefinition>(), variables, flags, choicePath + ".effects", errors);
         }
     }
 
     private static void ValidateConditions(
         IReadOnlyList<ConditionDefinition> conditions,
+        IReadOnlyDictionary<string, int> variables,
+        IReadOnlyDictionary<string, bool> flags,
         string path,
         List<QuestValidationError> errors)
     {
@@ -198,11 +206,20 @@ public sealed class JsonQuestValidator : IQuestValidator
 
             RequireValue(condition.Target, conditionPath + ".target", "Condition target is required.", errors);
             RequireValue(condition.Operator, conditionPath + ".operator", "Condition operator is required.", errors);
+
+            if (string.IsNullOrWhiteSpace(condition.Target) || string.IsNullOrWhiteSpace(condition.Operator))
+            {
+                continue;
+            }
+
+            ValidateConditionTargetAndValue(condition, variables, flags, conditionPath, errors);
         }
     }
 
     private static void ValidateEffects(
         IReadOnlyList<EffectDefinition> effects,
+        IReadOnlyDictionary<string, int> variables,
+        IReadOnlyDictionary<string, bool> flags,
         string path,
         List<QuestValidationError> errors)
     {
@@ -213,7 +230,131 @@ public sealed class JsonQuestValidator : IQuestValidator
 
             RequireValue(effect.Type, effectPath + ".type", "Effect type is required.", errors);
             RequireValue(effect.Target, effectPath + ".target", "Effect target is required.", errors);
+
+            if (string.IsNullOrWhiteSpace(effect.Type) || string.IsNullOrWhiteSpace(effect.Target))
+            {
+                continue;
+            }
+
+            ValidateEffectTargetAndValue(effect, variables, flags, effectPath, errors);
         }
+    }
+
+    private static void ValidateConditionTargetAndValue(
+        ConditionDefinition condition,
+        IReadOnlyDictionary<string, int> variables,
+        IReadOnlyDictionary<string, bool> flags,
+        string path,
+        List<QuestValidationError> errors)
+    {
+        if (flags.ContainsKey(condition.Target))
+        {
+            if (condition.Operator is not "==" and not "!=")
+            {
+                errors.Add(new QuestValidationError(
+                    "condition.operator.invalid_for_flag",
+                    $"Operator '{condition.Operator}' is not supported for flag '{condition.Target}'.",
+                    path + ".operator"));
+            }
+
+            if (condition.Value is not bool)
+            {
+                errors.Add(new QuestValidationError(
+                    "condition.value.invalid_for_flag",
+                    $"Condition value for flag '{condition.Target}' must be boolean.",
+                    path + ".value"));
+            }
+
+            return;
+        }
+
+        if (variables.ContainsKey(condition.Target))
+        {
+            if (condition.Operator is not "==" and not "!=" and not ">" and not ">=" and not "<" and not "<=")
+            {
+                errors.Add(new QuestValidationError(
+                    "condition.operator.invalid_for_variable",
+                    $"Operator '{condition.Operator}' is not supported for variable '{condition.Target}'.",
+                    path + ".operator"));
+            }
+
+            if (!IsIntegerValue(condition.Value))
+            {
+                errors.Add(new QuestValidationError(
+                    "condition.value.invalid_for_variable",
+                    $"Condition value for variable '{condition.Target}' must be an integer.",
+                    path + ".value"));
+            }
+
+            return;
+        }
+
+        errors.Add(new QuestValidationError(
+            "condition.target.missing",
+            $"Condition target '{condition.Target}' is not defined in variables or flags.",
+            path + ".target"));
+    }
+
+    private static void ValidateEffectTargetAndValue(
+        EffectDefinition effect,
+        IReadOnlyDictionary<string, int> variables,
+        IReadOnlyDictionary<string, bool> flags,
+        string path,
+        List<QuestValidationError> errors)
+    {
+        switch (effect.Type)
+        {
+            case "add":
+            case "set_variable":
+                if (!variables.ContainsKey(effect.Target))
+                {
+                    errors.Add(new QuestValidationError(
+                        "effect.target.variable_missing",
+                        $"Effect target '{effect.Target}' is not defined as a variable.",
+                        path + ".target"));
+                }
+
+                if (!IsIntegerValue(effect.Value))
+                {
+                    errors.Add(new QuestValidationError(
+                        "effect.value.invalid_for_variable",
+                        $"Effect value for variable '{effect.Target}' must be an integer.",
+                        path + ".value"));
+                }
+
+                break;
+
+            case "set_flag":
+                if (!flags.ContainsKey(effect.Target))
+                {
+                    errors.Add(new QuestValidationError(
+                        "effect.target.flag_missing",
+                        $"Effect target '{effect.Target}' is not defined as a flag.",
+                        path + ".target"));
+                }
+
+                if (effect.Value is not bool)
+                {
+                    errors.Add(new QuestValidationError(
+                        "effect.value.invalid_for_flag",
+                        $"Effect value for flag '{effect.Target}' must be boolean.",
+                        path + ".value"));
+                }
+
+                break;
+
+            default:
+                errors.Add(new QuestValidationError(
+                    "effect.type.invalid",
+                    $"Effect type '{effect.Type}' is not supported.",
+                    path + ".type"));
+                break;
+        }
+    }
+
+    private static bool IsIntegerValue(object? value)
+    {
+        return value is int or long;
     }
 
     private static void RequireText(IReadOnlyList<string> text, string path, List<QuestValidationError> errors)

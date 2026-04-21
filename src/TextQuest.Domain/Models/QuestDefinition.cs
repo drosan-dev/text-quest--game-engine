@@ -1,5 +1,8 @@
 namespace TextQuest.Domain.Models;
 
+/// <summary>
+/// Описывает полный сценарий квеста, доступный для загрузки и исполнения.
+/// </summary>
 public sealed record QuestDefinition(
     string QuestId,
     string Version,

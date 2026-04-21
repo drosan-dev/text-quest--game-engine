@@ -2,14 +2,23 @@ using System.Text;
 
 namespace TextQuest.Application.Models;
 
+/// <summary>
+/// Представляет ошибку загрузки или проверки квеста с полным набором найденных нарушений.
+/// </summary>
 public sealed class QuestValidationException : Exception
 {
+    /// <summary>
+    /// Инициализирует исключение списком ошибок валидации.
+    /// </summary>
     public QuestValidationException(IReadOnlyList<QuestValidationError> errors)
         : base(BuildMessage(errors))
     {
         Errors = errors;
     }
 
+    /// <summary>
+    /// Ошибки, обнаруженные при разборе или валидации квеста.
+    /// </summary>
     public IReadOnlyList<QuestValidationError> Errors { get; }
 
     private static string BuildMessage(IReadOnlyList<QuestValidationError> errors)
