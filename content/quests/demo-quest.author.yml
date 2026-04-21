@@ -1,0 +1,55 @@
+questId: demo_cell
+version: 1.0.0
+title: Пробуждение в камере
+start: intro
+
+vars:
+  resolve: 0
+
+flags:
+  hasKey: false
+
+scenes:
+  intro:
+    text:
+      - Вы приходите в себя в сырой камере.
+      - Под дверью виден тонкий луч света.
+    choices:
+      - id: search_straw
+        text: Осмотреть солому
+        do: hasKey = true
+        goto: corridor_decision
+      - id: call_guard
+        text: Позвать стражника
+        do: resolve += 1
+        goto: corridor_decision
+
+  corridor_decision:
+    type: decision
+    text: Шаги в коридоре затихают, и у вас появляется шанс действовать.
+    choices:
+      - id: unlock_door
+        text: Попробовать открыть дверь ключом
+        when: hasKey
+        goto: outcome_branch
+      - id: force_door
+        text: Навалиться на дверь плечом
+        when: resolve >= 1
+        goto: outcome_branch
+      - id: wait
+        text: Остаться и ждать
+        goto: captured
+
+  outcome_branch:
+    branches:
+      - when: hasKey
+        goto: escape
+    default: captured
+
+  escape:
+    text: Замок поддается, и вы бесшумно исчезаете в коридоре.
+    result: victory
+
+  captured:
+    text: Шум привлекает стражу, и попытка побега заканчивается провалом.
+    result: defeat

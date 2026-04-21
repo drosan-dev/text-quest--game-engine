@@ -4,6 +4,7 @@
 
 - `docs/README.md` - карта документации.
 - `docs/technical-vision.md` - архитектурные основания текущей реализации.
+- `docs/authoring-quest-format.md` - упрощенный authoring-формат, компилируемый в runtime-контракт.
 - `docs/json-quest-format.md` - фактический контракт JSON-квеста.
 - `docs/cli.md` - фактическое поведение CLI.
 - `docs/adapter-extension-points.md` - стабильные точки интеграции для новых адаптеров.
@@ -20,7 +21,7 @@
 ## Что Есть Сейчас
 
 - Платформенно-нейтральный .NET-движок текстовых квестов.
-- Загрузка квестов из внешних JSON-файлов.
+- Загрузка квестов из внешнего runtime JSON и из authoring YAML-слоя с компиляцией в тот же runtime-контракт.
 - Структурная валидация квеста до запуска runtime.
 - Runtime с запуском новой игры, применением выбора и восстановлением из `GameState`.
 - Поддержка переменных, флагов, условий, эффектов и автоматических `branch`-узлов.
@@ -32,7 +33,7 @@
 
 - `src/TextQuest.Domain` - доменные модели квеста, состояния, условий и эффектов.
 - `src/TextQuest.Application` - runtime и application-контракты.
-- `src/TextQuest.Content.Json` - чтение JSON-квестов и валидация контента.
+- `src/TextQuest.Content.Json` - чтение runtime JSON, компиляция authoring YAML и валидация контента.
 - `src/TextQuest.Infrastructure` - файловый `ISaveStore` и связанные инфраструктурные реализации.
 - `src/TextQuest.Frontends.Contracts` - frontend-neutral модели представления.
 - `src/TextQuest.Cli` - эталонный консольный адаптер.
@@ -41,6 +42,7 @@
 ## Что Считать Источником Истины
 
 - Архитектура и границы слоев: `docs/technical-vision.md`.
+- Фактический authoring-формат: `docs/authoring-quest-format.md`.
 - Фактический JSON-контракт: `docs/json-quest-format.md`.
 - Фактическое поведение CLI: `docs/cli.md`.
 - Контракты и правила для новых адаптеров: `docs/adapter-extension-points.md`.

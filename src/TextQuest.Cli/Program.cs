@@ -17,7 +17,7 @@ static async Task<int> RunAsync(string[] args)
     try
     {
         var options = ParseOptions(args);
-        IQuestLoader loader = new JsonQuestLoader(loggerFactory.CreateLogger<JsonQuestLoader>());
+        IQuestLoader loader = CreateQuestLoader(options.QuestFormat, loggerFactory);
         ITextQuestRuntime runtime = new TextQuestRuntime(loggerFactory.CreateLogger<TextQuestRuntime>());
         ISaveStore saveStore = new FileSystemSaveStore(options.SavesDirectory, loggerFactory.CreateLogger<FileSystemSaveStore>());
 
@@ -126,6 +126,7 @@ static CliOptions ParseOptions(string[] args)
 {
     string? questPath = null;
     string? savesDirectory = null;
+    var questFormat = QuestInputFormat.RuntimeJson;
 
     for (var index = 0; index < args.Length; index++)
     {
@@ -139,14 +140,39 @@ static CliOptions ParseOptions(string[] args)
                 savesDirectory = ReadOptionValue(args, ref index, "--saves-dir");
                 break;
 
+            case "--quest-format":
+                questFormat = ParseQuestFormat(ReadOptionValue(args, ref index, "--quest-format"));
+                break;
+
             default:
-                throw new ArgumentException($"Unknown argument '{args[index]}'. Supported arguments: --quest <path>, --saves-dir <path>.");
+                throw new ArgumentException($"Unknown argument '{args[index]}'. Supported arguments: --quest <path>, --quest-format <runtime-json|authoring-yaml>, --saves-dir <path>.");
         }
     }
 
     return new CliOptions(
-        questPath is null ? GetDefaultQuestPath() : Path.GetFullPath(questPath),
-        savesDirectory is null ? null : Path.GetFullPath(savesDirectory));
+        questPath is null ? GetDefaultQuestPath(questFormat) : Path.GetFullPath(questPath),
+        savesDirectory is null ? null : Path.GetFullPath(savesDirectory),
+        questFormat);
+}
+
+static IQuestLoader CreateQuestLoader(QuestInputFormat format, ILoggerFactory loggerFactory)
+{
+    return format switch
+    {
+        QuestInputFormat.RuntimeJson => new JsonQuestLoader(loggerFactory.CreateLogger<JsonQuestLoader>()),
+        QuestInputFormat.AuthoringYaml => new AuthoringQuestLoader(loggerFactory.CreateLogger<AuthoringQuestLoader>()),
+        _ => throw new ArgumentOutOfRangeException(nameof(format), format, "Unsupported quest input format."),
+    };
+}
+
+static QuestInputFormat ParseQuestFormat(string value)
+{
+    return value.Trim().ToLowerInvariant() switch
+    {
+        "runtime-json" or "runtime" or "json" => QuestInputFormat.RuntimeJson,
+        "authoring-yaml" or "authoring" or "author" => QuestInputFormat.AuthoringYaml,
+        _ => throw new ArgumentException($"Unsupported quest format '{value}'. Supported values: runtime-json, authoring-yaml."),
+    };
 }
 
 static string ReadOptionValue(string[] args, ref int index, string optionName)
@@ -160,9 +186,10 @@ static string ReadOptionValue(string[] args, ref int index, string optionName)
     return args[index];
 }
 
-static string GetDefaultQuestPath()
+static string GetDefaultQuestPath(QuestInputFormat format)
 {
-    return Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "content", "quests", "demo-quest.json"));
+    var fileName = format == QuestInputFormat.AuthoringYaml ? "demo-quest.author.yml" : "demo-quest.json";
+    return Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "content", "quests", fileName));
 }
 
 static bool TryParseSaveCommand(string input, out string saveId)
@@ -214,4 +241,10 @@ static void RenderState(PresentableState state)
     Console.WriteLine("Команды: save [id], load [id], exit");
 }
 
-internal sealed record CliOptions(string QuestPath, string? SavesDirectory);
+internal enum QuestInputFormat
+{
+    RuntimeJson,
+    AuthoringYaml,
+}
+
+internal sealed record CliOptions(string QuestPath, string? SavesDirectory, QuestInputFormat QuestFormat);

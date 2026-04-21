@@ -104,7 +104,27 @@ public sealed class CliIntegrationTests : IDisposable
         Assert.Contains("\"eventName\":\"GameStarted\"", standardError, StringComparison.Ordinal);
     }
 
-    private static Process StartCliProcess(string questPath, string savesDirectory)
+    [Fact]
+    public async Task Cli_ShouldRunAuthoringQuestWhenFormatFlagIsProvided()
+    {
+        var questPath = Path.Combine(RepositoryRoot, "content", "quests", "demo-quest.author.yml");
+        var process = StartCliProcess(questPath, savesDirectory, "authoring-yaml");
+
+        await process.StandardInput.WriteLineAsync("1");
+        await process.StandardInput.WriteLineAsync("1");
+        process.StandardInput.Close();
+
+        var standardOutput = await process.StandardOutput.ReadToEndAsync();
+        var standardError = await process.StandardError.ReadToEndAsync();
+        await process.WaitForExitAsync();
+
+        Assert.Equal(0, process.ExitCode);
+        Assert.Contains("Пробуждение в камере", standardOutput, StringComparison.Ordinal);
+        Assert.Contains("Результат: victory", standardOutput, StringComparison.Ordinal);
+        Assert.Contains("\"eventName\":\"AuthoringQuestLoaded\"", standardError, StringComparison.Ordinal);
+    }
+
+    private static Process StartCliProcess(string questPath, string savesDirectory, string questFormat = "runtime-json")
     {
         Directory.CreateDirectory(savesDirectory);
 
@@ -114,6 +134,8 @@ public sealed class CliIntegrationTests : IDisposable
             ArgumentList =
             {
                 Path.Combine(RepositoryRoot, "src", "TextQuest.Cli", "bin", BuildConfiguration, TargetFramework, "TextQuest.Cli.dll"),
+                "--quest-format",
+                questFormat,
                 "--quest",
                 questPath,
                 "--saves-dir",
