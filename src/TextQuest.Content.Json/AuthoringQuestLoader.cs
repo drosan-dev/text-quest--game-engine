@@ -139,7 +139,7 @@ public sealed class AuthoringQuestLoader : IQuestLoader
                 continue;
             }
 
-            var node = CompileScene(sceneId, sceneDto, variables, flags, errors, scenePath);
+            var node = CompileScene(sceneId, sceneDto, variables, flags, textPools, errors, scenePath);
             if (node is null)
             {
                 continue;
@@ -162,7 +162,7 @@ public sealed class AuthoringQuestLoader : IQuestLoader
             nodes);
     }
 
-    private static IReadOnlyDictionary<string, TextPoolDefinition> CompileTextPools(
+    private static Dictionary<string, TextPoolDefinition> CompileTextPools(
         Dictionary<string, List<string?>?>? pools,
         List<QuestValidationError> errors)
     {
@@ -217,6 +217,7 @@ public sealed class AuthoringQuestLoader : IQuestLoader
         AuthoringSceneDto sceneDto,
         IReadOnlyDictionary<string, int> variables,
         IReadOnlyDictionary<string, bool> flags,
+        Dictionary<string, TextPoolDefinition> textPools,
         List<QuestValidationError> errors,
         string path)
     {
@@ -226,12 +227,13 @@ public sealed class AuthoringQuestLoader : IQuestLoader
             return null;
         }
 
-        var text = ParseText(sceneDto.Text, path + ".text", errors);
+        var localPoolIdMap = BuildLocalTextPoolIdMap(sceneId, sceneDto.TextPools, path + ".textPools", textPools, errors);
+        var text = TextPoolReferenceRewriter.Rewrite(ParseText(sceneDto.Text, path + ".text", errors), localPoolIdMap);
 
         return nodeType.Value switch
         {
-            NodeType.Text => new TextNodeDefinition(sceneId, text, CompileChoices(sceneId, sceneDto.Choices, variables, flags, errors, path + ".choices")),
-            NodeType.Decision => new DecisionNodeDefinition(sceneId, text, CompileChoices(sceneId, sceneDto.Choices, variables, flags, errors, path + ".choices")),
+            NodeType.Text => new TextNodeDefinition(sceneId, text, RewriteChoices(CompileChoices(sceneId, sceneDto.Choices, variables, flags, errors, path + ".choices"), localPoolIdMap)),
+            NodeType.Decision => new DecisionNodeDefinition(sceneId, text, RewriteChoices(CompileChoices(sceneId, sceneDto.Choices, variables, flags, errors, path + ".choices"), localPoolIdMap)),
             NodeType.Branch => new BranchNodeDefinition(
                 sceneId,
                 text,
@@ -240,6 +242,86 @@ public sealed class AuthoringQuestLoader : IQuestLoader
             NodeType.End => new EndNodeDefinition(sceneId, text, sceneDto.Result?.Trim() ?? string.Empty),
             _ => null,
         };
+    }
+
+    private static IReadOnlyList<ChoiceDefinition> RewriteChoices(IReadOnlyList<ChoiceDefinition> choices, IReadOnlyDictionary<string, string> localPoolIdMap)
+    {
+        if (choices.Count == 0 || localPoolIdMap.Count == 0)
+        {
+            return choices;
+        }
+
+        return choices
+            .Select(choice => choice with { Text = TextPoolReferenceRewriter.Rewrite(choice.Text, localPoolIdMap) })
+            .ToArray();
+    }
+
+    private static IReadOnlyDictionary<string, string> BuildLocalTextPoolIdMap(
+        string sceneId,
+        Dictionary<string, List<string?>?>? localPools,
+        string path,
+        Dictionary<string, TextPoolDefinition> globalPools,
+        List<QuestValidationError> errors)
+    {
+        if (localPools is null || localPools.Count == 0)
+        {
+            return new Dictionary<string, string>(StringComparer.Ordinal);
+        }
+
+        var idMap = new Dictionary<string, string>(StringComparer.Ordinal);
+
+        foreach (var (poolIdRaw, itemsRaw) in localPools)
+        {
+            var poolId = (poolIdRaw ?? string.Empty).Trim();
+            var poolPath = $"{path}.{poolIdRaw}";
+
+            if (string.IsNullOrWhiteSpace(poolId))
+            {
+                errors.Add(new QuestValidationError("text_pool.id.required", "Text pool id must not be empty.", poolPath, NodeId: sceneId));
+                continue;
+            }
+
+            var globalId = $"{sceneId}.{poolId}";
+            if (!idMap.TryAdd(poolId, globalId))
+            {
+                errors.Add(new QuestValidationError("text_pool.id.duplicate", $"Text pool id '{poolId}' must be unique within scene.", poolPath, NodeId: sceneId));
+                continue;
+            }
+
+            if (itemsRaw is null)
+            {
+                errors.Add(new QuestValidationError("text_pool.items.required", $"Text pool '{poolId}' must be an array of strings.", poolPath, NodeId: sceneId));
+                continue;
+            }
+
+            var items = new List<string>(itemsRaw.Count);
+            for (var index = 0; index < itemsRaw.Count; index++)
+            {
+                var value = itemsRaw[index]?.Trim() ?? string.Empty;
+                if (string.IsNullOrWhiteSpace(value))
+                {
+                    errors.Add(new QuestValidationError("text_pool.item.required", $"Text pool '{poolId}' must contain only non-empty strings.", $"{poolPath}[{index}]", NodeId: sceneId));
+                    continue;
+                }
+
+                items.Add(value);
+            }
+
+            if (items.Count == 0)
+            {
+                continue;
+            }
+
+            if (globalPools.ContainsKey(globalId))
+            {
+                errors.Add(new QuestValidationError("text_pool.id.duplicate", $"Text pool id '{globalId}' must be unique.", poolPath, NodeId: sceneId));
+                continue;
+            }
+
+            globalPools[globalId] = new TextPoolDefinition(globalId, items);
+        }
+
+        return idMap;
     }
 
     private static NodeType? ResolveNodeType(AuthoringSceneDto sceneDto, string path, List<QuestValidationError> errors)
@@ -634,6 +716,8 @@ public sealed class AuthoringQuestLoader : IQuestLoader
         public string? Type { get; init; }
 
         public object? Text { get; init; }
+
+        public Dictionary<string, List<string?>?>? TextPools { get; init; }
 
         public List<AuthoringChoiceDto?>? Choices { get; init; }
 
